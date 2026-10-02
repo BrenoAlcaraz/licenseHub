@@ -13,6 +13,7 @@ No meu estágio de automação de processos, o time de TI controlava as licença
 - **Atribuição e revogação** de licenças, com histórico completo (nada é apagado).
 - **Desligamento** em uma única transação: o colaborador vira `OFFBOARDED` e todas as licenças dele são liberadas.
 - **Relatório de custos**: custo total, custo por departamento, vagas ociosas e economia potencial.
+- **Alerta em tempo real** (WebSocket) quando um produto chega a 90% das vagas em uso.
 - Documentação interativa com **Swagger** em `/docs`.
 
 ## Regras de negócio
@@ -46,6 +47,7 @@ O comportamento detalhado de cada endpoint, com critérios de aceite, está em [
 | **@nestjs/config** | Configuração por variáveis de ambiente (`.env`). |
 | **@nestjs/swagger** | Documentação gerada a partir dos DTOs (com o plugin do CLI, sem repetir decorators). |
 | **Jest** | Testes unitários dos services com o `EntityManager` mockado. |
+| **Socket.IO** (`@nestjs/websockets`) | Alerta em tempo real: o servidor avisa os clientes sem que eles precisem ficar perguntando; reconexão e eventos com nome prontos. |
 | **Docker + Docker Compose** | Sobe banco e API com um comando, igual em qualquer máquina. |
 | **ESLint + Prettier** | Padrão de código e formatação automáticos. |
 
@@ -149,16 +151,40 @@ A economia potencial passou de 127.700 (seed) para 151.100: +27.400 das licença
 
 > **Windows:** ao usar `curl` no Git Bash/PowerShell com acentos no corpo (ex.: `"Fábio"`), o terminal pode mudar a codificação do texto. Use o Swagger ou envie o JSON a partir de um arquivo (`-d @body.json`).
 
+## Alerta em tempo real (WebSocket)
+
+Quando uma atribuição deixa um produto com **90% ou mais** das vagas em uso, a API envia o evento `seats.threshold` pelo **Socket.IO** a todos os clientes conectados. Ele usa o mesmo endereço e porta da API. Assim o TI fica sabendo que precisa comprar licenças *antes* de alguém receber um 409. Detalhes em [`specs/realtime.spec.md`](specs/realtime.spec.md).
+
+```json
+{ "productId": "…", "productName": "Microsoft 365 E3", "seatsInUse": 9, "totalSeats": 10 }
+```
+
+**Como testar no navegador** (sem instalar nada):
+
+1. Abra http://localhost:3000/docs e o console do navegador (F12).
+2. Cole o código abaixo. Ele carrega o cliente Socket.IO servido pela própria API e fica ouvindo:
+
+   ```js
+   const s = document.createElement('script');
+   s.src = '/socket.io/socket.io.js';
+   s.onload = () => io().on('seats.threshold', (e) => console.log('ALERTA', e));
+   document.head.appendChild(s);
+   ```
+
+3. No Swagger, na mesma aba, atribua o **Microsoft 365 E3** (7/10 no seed) ao **João Pereira** (8/10, sem alerta) e depois à **Gabriela Nunes**. Com 9/10, o console mostra `ALERTA { …, seatsInUse: 9, totalSeats: 10 }`.
+
+**Com o Postman:** crie uma requisição do tipo *Socket.IO* para `http://localhost:3000`, adicione o evento `seats.threshold` em *Events* (com *Listen* ligado), conecte e faça as atribuições acima.
+
 ## Como rodar os testes
 
 ```bash
-npm test          # testes unitários (52 testes, 4 suítes)
+npm test          # testes unitários (58 testes, 4 suítes)
 npm run test:cov  # com relatório de cobertura em coverage/
 npm run lint      # ESLint + Prettier
 npm run build     # checagem de tipos completa
 
 docker compose up -d db   # o e2e precisa do PostgreSQL
-npm run test:e2e          # testes ponta a ponta (10 testes)
+npm run test:e2e          # testes ponta a ponta (11 testes)
 ```
 
 - Os **testes unitários** cobrem **todas as regras de negócio** nos services, com o `EntityManager` mockado. A cobertura de linhas dos services fica entre 98% e 100%.
@@ -166,7 +192,8 @@ npm run test:e2e          # testes ponta a ponta (10 testes)
   - o fluxo completo produto → colaborador → atribuição → desligamento;
   - a validação de entrada;
   - a atomicidade do desligamento, forçando uma falha no banco;
-  - os **cenários de concorrência**, por exemplo 20 requisições disputando 1 vaga.
+  - os **cenários de concorrência**, por exemplo 20 requisições disputando 1 vaga;
+  - o **alerta em tempo real**, com um cliente WebSocket de verdade conectado. Ele foi escrito sobre o `WebSocket` nativo do Node 22, sem dependência extra.
 
   Para conferir que esses testes pegam regressões, removi o lock da atribuição de propósito: o E2E-05 falhou com 10 licenças atribuídas para 1 vaga.
 - O nome de cada teste cita o critério de aceite da spec (ex.: `LIC-AC07 (RN01) fails with 409 when the product has no available seats`).
@@ -184,7 +211,7 @@ licensehub/
 │   ├── mikro-orm.config.ts  # configuração do banco (app e CLI de migrations)
 │   ├── products/            # produtos, cálculo de vagas, RN07, RN09
 │   ├── employees/           # colaboradores, status, desligamento (RN04, RN05, RN08)
-│   ├── licenses/            # atribuição e revogação (RN01–RN03, RN06)
+│   ├── licenses/            # atribuição e revogação (RN01–RN03, RN06) + alerta WebSocket
 │   ├── reports/             # relatório de custos e desperdício
 │   └── database/
 │       ├── migrations/      # schema versionado (gerado pelo MikroORM)
@@ -230,6 +257,8 @@ Antes disso, 20 atribuições simultâneas para um produto com **1 vaga** passav
 
 **Relatório: o banco agrega, o service deriva.** `COUNT`/`SUM`/`GROUP BY` no SQL; total, desperdício e ordenação em TypeScript (a parte testada unitariamente). As duas consultas rodam numa transação `REPEATABLE READ`, a mesma "foto" do banco, então `custo total − custo em uso = economia potencial` sempre fecha.
 
+**Alerta em tempo real só depois do commit.** O evento `seats.threshold` é enviado depois de a transação da atribuição terminar. Se fosse enviado dentro dela, um rollback deixaria o TI avisado sobre uma licença que nunca existiu. O gateway só entrega a mensagem; a decisão de *quando* avisar é regra do `LicensesService`. O limite de 90% é comparado com inteiros (`seatsInUse × 100 ≥ totalSeats × 90`), e não com `float`, para continuar correto se o percentual mudar.
+
 **Schema só por migrations.** Nada de `schema:update`/`synchronize`. As migrations são geradas a partir das entidades e aplicadas automaticamente quando a API sobe.
 
 **Organização por domínio.** Cada pasta (`products`, `employees`, `licenses`, `reports`) contém tudo o que é dela. Para entender ou mudar uma regra, basta olhar uma pasta. Controllers só recebem a requisição e chamam o service; regras de negócio ficam sempre nos services.
@@ -256,4 +285,5 @@ Exemplos concretos do que revisei, corrigi ou rejeitei:
 - **Teste que não provava nada.** Um teste de corrida feito com `curl` em sequência no Git Bash não reproduzia o problema, porque os processos subiam devagar demais para competir. Só um script com `Promise.all` mostrou o bug. Também percebi que algumas corridas só exercitavam uma ordem de chegada e forcei a ordem inversa.
 - **Testes verdes, build quebrado.** Um getter (`isActive`) na entidade passava nos testes, mas quebrava a compilação, porque o `ts-jest` não checa tipos entre arquivos. Desde então, `npm run build` faz parte da verificação de toda etapa.
 - **Reforço da RN03 no banco.** Aprovei o índice único parcial proposto, que não estava no escopo original, porque ele garante a regra mesmo se duas requisições passarem pela checagem do service ao mesmo tempo.
+- **Afirmação errada da IA.** Ao escrever a spec do WebSocket, a IA justificou a comparação com inteiros dizendo que `70 × 0.9` dava `63.00000000000001` em JavaScript. Conferimos e era falso: dá exatamente `63`, e com 90% o `float` nunca falha (testado até 100.000 vagas). Uma busca exaustiva mostrou que o problema existe com outros percentuais: com 7%, `100 × 0.07` dá `7.000000000000001`. A decisão ficou, mas a justificativa na spec foi corrigida.
 - **Seed seguro.** O seed recusa rodar em banco com dados em vez de apagá-los, para não haver risco de perder dados por engano.

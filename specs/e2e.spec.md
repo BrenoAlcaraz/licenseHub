@@ -28,6 +28,7 @@ Automatizam os critérios `[pipe]` e `[manual]` das outras specs.
 | E2E-07 | **Revogação em paralelo:** 10 revogações da mesma atribuição → 1×200, 9×409 | RN06, LIC-AC15 |
 | E2E-08 | **Desligamento em paralelo:** 10 offboards → 1×200, 9×409; offboard junto com atribuições → nenhuma licença ativa sobra | RN04, RN05, EMP-AC15 |
 | E2E-09 | **Redução de vagas vs. atribuições:** `PATCH totalSeats` junto com atribuições → `seatsInUse ≤ totalSeats` sempre | RN07, PRD-AC11 |
+| E2E-10 | **Alerta em tempo real:** um cliente WebSocket conectado recebe `seats.threshold` quando uma atribuição leva o produto a 9/10 | RT-AC07 |
 
 Nos cenários de concorrência, a asserção principal é o **invariante** (ex.:
 `seatsInUse ≤ totalSeats`, no máximo 1 sucesso), que vale qualquer que seja a

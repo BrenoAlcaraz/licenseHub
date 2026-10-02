@@ -19,6 +19,10 @@ import { LicenseResponseDto } from './dto/license-response.dto';
 import { ListLicensesQueryDto } from './dto/list-licenses-query.dto';
 import { LicenseAssignment } from './license-assignment.entity';
 import { RevokeReason } from './revoke-reason.enum';
+import { SeatsThresholdGateway } from './seats-threshold.gateway';
+
+/** A `seats.threshold` alert is sent when seats in use reach this share. */
+const SEATS_THRESHOLD_PERCENT = 90;
 
 @Injectable()
 export class LicensesService {
@@ -26,6 +30,7 @@ export class LicensesService {
     private readonly em: EntityManager,
     private readonly productsService: ProductsService,
     private readonly employeesService: EmployeesService,
+    private readonly seatsGateway: SeatsThresholdGateway,
   ) {}
 
   // Checks run in the order defined in specs/licenses.spec.md and stop at the
@@ -33,8 +38,8 @@ export class LicensesService {
   //
   // Everything runs in one transaction. Calls made through `this.em` (also
   // inside ProductsService/EmployeesService) join it automatically.
-  assign(dto: AssignLicenseDto): Promise<LicenseResponseDto> {
-    return this.em.transactional(async () => {
+  async assign(dto: AssignLicenseDto): Promise<LicenseResponseDto> {
+    const { assignment, seatsInUse } = await this.em.transactional(async () => {
       // Rows are read with SELECT ... FOR UPDATE: concurrent assignments of
       // the same product (RN01) or to the same employee (vs. offboarding)
       // wait here, and then read the data already updated by the other one.
@@ -48,16 +53,23 @@ export class LicensesService {
       );
       this.ensureEmployeeIsActive(employee);
       await this.ensureNotAlreadyAssigned(product, employee);
-      await this.ensureHasAvailableSeat(product);
+      const seatsInUseBefore =
+        await this.productsService.countSeatsInUse(product);
+      this.ensureHasAvailableSeat(product, seatsInUseBefore);
 
-      const assignment = this.em.create(LicenseAssignment, {
+      const created = this.em.create(LicenseAssignment, {
         product,
         employee,
       });
       await this.flushAssignment(product, employee);
 
-      return this.toResponse(assignment);
+      return { assignment: created, seatsInUse: seatsInUseBefore + 1 };
     });
+
+    // After the commit: never notify about an assignment that was rolled back.
+    this.notifyIfNearlyFull(assignment.product, seatsInUse);
+
+    return this.toResponse(assignment);
   }
 
   async findAll(query: ListLicensesQueryDto): Promise<LicenseResponseDto[]> {
@@ -157,12 +169,26 @@ export class LicensesService {
   }
 
   // RN01: the product must have a free seat.
-  private async ensureHasAvailableSeat(product: Product): Promise<void> {
-    const seatsInUse = await this.productsService.countSeatsInUse(product);
+  private ensureHasAvailableSeat(product: Product, seatsInUse: number): void {
     if (seatsInUse >= product.totalSeats) {
       throw new ConflictException(
         `Product '${product.name}' has no available seats (${seatsInUse}/${product.totalSeats} in use)`,
       );
+    }
+  }
+
+  // Real-time alert (specs/realtime.spec.md): the product reached 90% or more
+  // of its seats. Compared with integers, not floats, so any threshold is safe.
+  private notifyIfNearlyFull(product: Product, seatsInUse: number): void {
+    const reachedThreshold =
+      seatsInUse * 100 >= product.totalSeats * SEATS_THRESHOLD_PERCENT;
+    if (reachedThreshold) {
+      this.seatsGateway.notifySeatsThreshold({
+        productId: product.id,
+        productName: product.name,
+        seatsInUse,
+        totalSeats: product.totalSeats,
+      });
     }
   }
 

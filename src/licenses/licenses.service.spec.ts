@@ -10,6 +10,7 @@ import { ProductsService } from '../products/products.service';
 import { LicenseAssignment } from './license-assignment.entity';
 import { LicensesService } from './licenses.service';
 import { RevokeReason } from './revoke-reason.enum';
+import { SeatsThresholdGateway } from './seats-threshold.gateway';
 
 const PRODUCT_ID = '6f1c2a3e-8a4b-4c1d-9e2f-0a1b2c3d4e5f';
 const EMPLOYEE_ID = '3b9f6d2a-1c4e-4f8a-9b7d-5e6f7a8b9c0d';
@@ -62,6 +63,9 @@ describe('LicensesService', () => {
     countSeatsInUse: jest.Mock;
   };
   let employeesService: { findEmployeeOrFail: jest.Mock };
+  let seatsGateway: { notifySeatsThreshold: jest.Mock };
+  // Lets RT-AC06 check that the event is sent after the transaction ends.
+  let insideTransaction: boolean;
   let product: Product;
   let employee: Employee;
 
@@ -80,7 +84,14 @@ describe('LicensesService', () => {
       flush: jest.fn(),
       populate: jest.fn(),
       // Runs the callback right away, like a transaction that commits.
-      transactional: jest.fn((work: () => Promise<unknown>) => work()),
+      transactional: jest.fn(async (work: () => Promise<unknown>) => {
+        insideTransaction = true;
+        try {
+          return await work();
+        } finally {
+          insideTransaction = false;
+        }
+      }),
     };
     productsService = {
       findProductOrFail: jest.fn().mockResolvedValue(product),
@@ -89,6 +100,8 @@ describe('LicensesService', () => {
     employeesService = {
       findEmployeeOrFail: jest.fn().mockResolvedValue(employee),
     };
+    insideTransaction = false;
+    seatsGateway = { notifySeatsThreshold: jest.fn() };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -96,6 +109,7 @@ describe('LicensesService', () => {
         { provide: EntityManager, useValue: em },
         { provide: ProductsService, useValue: productsService },
         { provide: EmployeesService, useValue: employeesService },
+        { provide: SeatsThresholdGateway, useValue: seatsGateway },
       ],
     }).compile();
 
@@ -304,6 +318,73 @@ describe('LicensesService', () => {
           `License assignment '${ASSIGNMENT_ID}' not found`,
         ),
       );
+    });
+  });
+  describe('seats.threshold event', () => {
+    function givenProduct(totalSeats: number, seatsInUseBefore: number) {
+      product.totalSeats = totalSeats;
+      productsService.countSeatsInUse.mockResolvedValue(seatsInUseBefore);
+    }
+
+    it('RT-AC01 notifies when an assignment reaches 90% of the seats', async () => {
+      givenProduct(10, 8);
+
+      await service.assign(dto);
+
+      expect(seatsGateway.notifySeatsThreshold).toHaveBeenCalledWith({
+        productId: PRODUCT_ID,
+        productName: 'Slack Pro',
+        seatsInUse: 9,
+        totalSeats: 10,
+      });
+    });
+
+    it('RT-AC02 does not notify below 90%', async () => {
+      givenProduct(10, 7);
+
+      await service.assign(dto);
+
+      expect(seatsGateway.notifySeatsThreshold).not.toHaveBeenCalled();
+    });
+
+    it('RT-AC03 keeps notifying above 90%', async () => {
+      givenProduct(10, 9);
+
+      await service.assign(dto);
+
+      expect(seatsGateway.notifySeatsThreshold).toHaveBeenCalledWith(
+        expect.objectContaining({ seatsInUse: 10, totalSeats: 10 }),
+      );
+    });
+
+    it('RT-AC04 notifies at exactly 90% (63/70)', async () => {
+      givenProduct(70, 62);
+
+      await service.assign(dto);
+
+      expect(seatsGateway.notifySeatsThreshold).toHaveBeenCalledWith(
+        expect.objectContaining({ seatsInUse: 63, totalSeats: 70 }),
+      );
+    });
+
+    it('RT-AC05 does not notify when the assignment is refused', async () => {
+      givenProduct(10, 8);
+      em.count.mockResolvedValue(1); // RN03: already assigned
+
+      await expect(service.assign(dto)).rejects.toThrow(ConflictException);
+      expect(seatsGateway.notifySeatsThreshold).not.toHaveBeenCalled();
+    });
+
+    it('RT-AC06 notifies only after the transaction has finished', async () => {
+      givenProduct(10, 8);
+      let notifiedInsideTransaction: boolean | undefined;
+      seatsGateway.notifySeatsThreshold.mockImplementation(() => {
+        notifiedInsideTransaction = insideTransaction;
+      });
+
+      await service.assign(dto);
+
+      expect(notifiedInsideTransaction).toBe(false);
     });
   });
 });

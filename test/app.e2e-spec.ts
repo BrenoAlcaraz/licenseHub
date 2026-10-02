@@ -4,6 +4,7 @@ import { MikroORM } from '@mikro-orm/core';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { Server } from 'node:http';
+import { AddressInfo } from 'node:net';
 import request, { Response } from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
@@ -11,8 +12,53 @@ import { EmployeeDetailResponseDto } from '../src/employees/dto/employee-detail-
 import { EmployeeResponseDto } from '../src/employees/dto/employee-response.dto';
 import { OffboardResponseDto } from '../src/employees/dto/offboard-response.dto';
 import { LicenseResponseDto } from '../src/licenses/dto/license-response.dto';
+import { SeatsThresholdEvent } from '../src/licenses/seats-threshold.gateway';
 import { ProductResponseDto } from '../src/products/dto/product-response.dto';
 import { CostReportDto } from '../src/reports/dto/cost-report.dto';
+
+interface SocketIoTestClient {
+  /** Events received so far, in order. */
+  received: { event: string; data: unknown }[];
+  close: () => void;
+}
+
+// Minimal Socket.IO client over Node's native WebSocket (no extra dependency).
+// Protocol messages are text: "0{...}" = connection open, "40" = join the
+// default namespace, "42[event, data]" = event, "2"/"3" = ping/pong.
+function openSocketIoClient(port: number): Promise<SocketIoTestClient> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(
+      `ws://localhost:${port}/socket.io/?EIO=4&transport=websocket`,
+    );
+    const received: SocketIoTestClient['received'] = [];
+    ws.onerror = () => reject(new Error('WebSocket connection failed'));
+    ws.onmessage = ({ data }) => {
+      const message = String(data);
+      if (message.startsWith('42')) {
+        const [event, payload] = JSON.parse(message.slice(2)) as [
+          string,
+          unknown,
+        ];
+        received.push({ event, data: payload });
+      } else if (message.startsWith('40')) {
+        resolve({ received, close: () => ws.close() });
+      } else if (message.startsWith('0')) {
+        ws.send('40');
+      } else if (message === '2') {
+        ws.send('3');
+      }
+    };
+  });
+}
+
+/** Waits until `condition` is true, or fails after `timeoutMs`. */
+async function waitUntil(condition: () => boolean, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error('Timed out waiting');
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
 
 describe('LicenseHub (e2e)', () => {
   let app: INestApplication<Server>;
@@ -197,6 +243,41 @@ describe('LicenseHub (e2e)', () => {
     expect(report.idleSeats).toEqual([
       expect.objectContaining({ idleSeats: 2, wastedMonthlyCostCents: 10000 }),
     ]);
+  });
+
+  describe('E2E-10 (RT-AC07) real-time seats.threshold alert', () => {
+    let client: SocketIoTestClient;
+
+    beforeEach(async () => {
+      const { port } = app.getHttpServer().address() as AddressInfo;
+      client = await openSocketIoClient(port);
+    });
+
+    afterEach(() => client.close());
+
+    it('a connected client receives the alert when a product reaches 90%', async () => {
+      const product = await createProduct({ totalSeats: 10 });
+      const employees = await Promise.all(
+        Array.from({ length: 9 }, () => createEmployee()),
+      );
+      for (const employee of employees.slice(0, 8)) {
+        await assign(product.id, employee.id).expect(201); // up to 8/10
+      }
+      expect(client.received).toEqual([]);
+
+      await assign(product.id, employees[8].id).expect(201); // 9/10 = 90%
+
+      await waitUntil(() => client.received.length > 0);
+      const expected: SeatsThresholdEvent = {
+        productId: product.id,
+        productName: product.name,
+        seatsInUse: 9,
+        totalSeats: 10,
+      };
+      expect(client.received).toEqual([
+        { event: 'seats.threshold', data: expected },
+      ]);
+    });
   });
 
   describe('concurrency', () => {

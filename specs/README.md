@@ -22,6 +22,7 @@ Cada critério de aceite tem um ID `<MÓDULO>-AC<NN>`:
 | `EMP` | Employees | [employees.spec.md](employees.spec.md) |
 | `LIC` | Licenses | [licenses.spec.md](licenses.spec.md) |
 | `REP` | Reports | [reports.spec.md](reports.spec.md) |
+| `RT` | Alerta em tempo real (WebSocket) | [realtime.spec.md](realtime.spec.md) |
 | `E2E` | Testes ponta a ponta | [e2e.spec.md](e2e.spec.md) |
 
 O nome do teste cita o ID do critério e a regra de negócio, por exemplo:
