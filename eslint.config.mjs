@@ -26,6 +26,12 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/web/**/*.ts'],
+    languageOptions: {
+      globals: globals.browser,
+    },
+  },
+  {
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',

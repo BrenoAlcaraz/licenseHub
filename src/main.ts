@@ -2,12 +2,12 @@ import { MikroORM } from '@mikro-orm/core';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { configureApp } from './app.setup';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // The schema is created only by migrations: apply pending ones before
   // serving requests (no schema:update / synchronize).
@@ -18,15 +18,6 @@ async function bootstrap() {
   );
 
   configureApp(app);
-
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('LicenseHub')
-    .setDescription('Software license seats, offboarding and cost reports')
-    .setVersion('1.0')
-    .build();
-  SwaggerModule.setup('docs', app, () =>
-    SwaggerModule.createDocument(app, swaggerConfig),
-  );
 
   const port = app.get(ConfigService).get<number>('PORT', 3000);
   await app.listen(port);

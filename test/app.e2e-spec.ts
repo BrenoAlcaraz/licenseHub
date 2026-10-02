@@ -2,6 +2,7 @@
 // Requires the database container: `docker compose up -d db`.
 import { MikroORM } from '@mikro-orm/core';
 import { INestApplication } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { Server } from 'node:http';
 import { AddressInfo } from 'node:net';
@@ -65,7 +66,7 @@ async function waitUntil(condition: () => boolean, timeoutMs = 3000) {
 }
 
 describe('LicenseHub (e2e)', () => {
-  let app: INestApplication<Server>;
+  let app: INestApplication<Server> & NestExpressApplication;
   let orm: MikroORM;
   let uniqueId = 0;
 
@@ -125,7 +126,9 @@ describe('LicenseHub (e2e)', () => {
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-    app = moduleRef.createNestApplication({ logger: false });
+    app = moduleRef.createNestApplication<NestExpressApplication>({
+      logger: false,
+    });
     configureApp(app);
 
     // Same path as production: the schema comes from the migrations.
@@ -139,6 +142,22 @@ describe('LicenseHub (e2e)', () => {
   beforeEach(() => sql('truncate license_assignment, employee, product'));
 
   afterAll(() => app.close());
+
+  it('UI-AC01 serves the dashboard, local assets and Swagger', async () => {
+    const html = await api()
+      .get('/')
+      .expect('Content-Type', /html/)
+      .expect(200);
+    expect(html.text).toContain('LicenseHub');
+
+    await api().get('/styles.css').expect('Content-Type', /css/).expect(200);
+    const script = await api()
+      .get('/dashboard.js')
+      .expect('Content-Type', /javascript/)
+      .expect(200);
+    expect(script.text).not.toContain('Object.defineProperty(exports');
+    await api().get('/docs').expect(200);
+  });
 
   it('E2E-01 offboarding frees the license: product → employee → assign → offboard', async () => {
     const product = await createProduct({ monthlyCostCents: 18900 });

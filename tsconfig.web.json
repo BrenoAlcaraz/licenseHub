@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "None",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "skipLibCheck": true,
+    "removeComments": true,
+    "outDir": "dist/web",
+    "noEmitOnError": true
+  },
+  "include": ["src/web/dashboard.ts"]
+}
