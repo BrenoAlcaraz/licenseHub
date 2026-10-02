@@ -144,6 +144,23 @@ function formatMoney(cents: number): string {
   return moneyFormatter.format(cents / 100);
 }
 
+function formatMoneyInput(cents: number): string {
+  const reais = Math.floor(cents / 100);
+  const remainingCents = cents % 100;
+  return `${reais},${remainingCents.toString().padStart(2, '0')}`;
+}
+
+function parseCurrencyToCents(value: string): number | null {
+  const normalized = value.trim().replace(/^R\$\s*/i, '');
+  const match = /^(\d+)(?:[,.](\d{1,2}))?$/.exec(normalized);
+  if (!match) return null;
+
+  const reais = Number(match[1]);
+  const cents = Number((match[2] ?? '').padEnd(2, '0'));
+  const total = reais * 100 + cents;
+  return Number.isSafeInteger(total) ? total : null;
+}
+
 function formatDate(value: string | null): string {
   if (!value) return '—';
   const date = new Date(value);
@@ -542,7 +559,7 @@ function openProductForm(product?: Product): void {
   element<HTMLInputElement>('product-name').value = product?.name ?? '';
   element<HTMLInputElement>('product-vendor').value = product?.vendor ?? '';
   element<HTMLInputElement>('product-cost').value =
-    product?.monthlyCostCents.toString() ?? '';
+    product === undefined ? '' : formatMoneyInput(product.monthlyCostCents);
   element<HTMLInputElement>('product-seats').value =
     product?.totalSeats.toString() ?? '';
   openDialog('product-dialog');
@@ -692,6 +709,15 @@ function setupDialogs(): void {
 }
 
 function setupForms(): void {
+  const productCost = element<HTMLInputElement>('product-cost');
+  productCost.addEventListener('input', () =>
+    productCost.setCustomValidity(''),
+  );
+  productCost.addEventListener('blur', () => {
+    const cents = parseCurrencyToCents(productCost.value);
+    if (cents !== null) productCost.value = formatMoneyInput(cents);
+  });
+
   element('new-product-button').addEventListener('click', () =>
     openProductForm(),
   );
@@ -714,14 +740,21 @@ function setupForms(): void {
         'button[type="submit"]',
       );
       if (!button) return;
+      const costInput = element<HTMLInputElement>('product-cost');
+      const monthlyCostCents = parseCurrencyToCents(costInput.value);
+      if (monthlyCostCents === null) {
+        costInput.setCustomValidity(
+          'Informe um valor em reais com até duas casas decimais, como 189,00.',
+        );
+        costInput.reportValidity();
+        return;
+      }
       void withBusyButton(button, async () => {
         const id = element<HTMLInputElement>('product-id').value;
         const body = {
           name: element<HTMLInputElement>('product-name').value.trim(),
           vendor: element<HTMLInputElement>('product-vendor').value.trim(),
-          monthlyCostCents: Number(
-            element<HTMLInputElement>('product-cost').value,
-          ),
+          monthlyCostCents,
           totalSeats: Number(element<HTMLInputElement>('product-seats').value),
         };
         await jsonRequest<Product>(

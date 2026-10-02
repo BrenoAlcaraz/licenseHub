@@ -244,8 +244,18 @@
         </div>
         <div class="form-columns">
           <div class="field">
-            <label for="product-cost">Custo mensal em centavos</label>
-            <input id="product-cost" type="number" required min="0" step="1" />
+            <label for="product-cost">Custo mensal por licença</label>
+            <div class="money-input">
+              <span aria-hidden="true">R$</span>
+              <input
+                id="product-cost"
+                required
+                inputmode="decimal"
+                autocomplete="off"
+                placeholder="189,00"
+              />
+            </div>
+            <small>Informe o valor em reais, com até duas casas decimais.</small>
           </div>
           <div class="field">
             <label for="product-seats">Total de licenças</label>

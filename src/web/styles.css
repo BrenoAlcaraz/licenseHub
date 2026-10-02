@@ -457,7 +457,44 @@ main {
   background: #ffffff;
 }
 
-.field input:focus,
+.money-input {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  overflow: hidden;
+  border: 1px solid #cbd5cf;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.money-input:focus-within {
+  outline: 3px solid rgba(39, 126, 83, 0.2);
+  outline-offset: 2px;
+}
+
+.money-input span {
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  padding: 0 11px;
+  border-right: 1px solid #dfe6e1;
+  color: var(--muted);
+  background: #f7f9f7;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.money-input input {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.money-input input:focus {
+  outline: none;
+}
+
+.field > input:focus,
 .field select:focus,
 button:focus-visible,
 a:focus-visible {
