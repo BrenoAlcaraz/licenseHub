@@ -1,6 +1,8 @@
 # LicenseHub
 
-LicenseHub is a REST API for managing a company's software licenses: who has each license, how many seats remain available, how much they cost, and how much the company saves when an employee is offboarded.
+LicenseHub is a learning project I built while preparing for junior back-end opportunities. After finding roles that used NestJS, TypeScript, MikroORM, PostgreSQL, and Docker—technologies with which I had limited practical experience—I decided to learn them by building a complete but intentionally small application. Instead of creating an artificial example, I revisited a real software-license management problem I had encountered during an internship.
+
+The result is a REST API for tracking who has each software license, how many seats remain available, how much they cost, and how much the company saves when an employee is offboarded.
 
 ## The problem
 
@@ -402,6 +404,14 @@ The product lock serializes assignments competing for the last seat. The employe
 - A queue with retries and idempotency for batch offboarding.
 - A separate migration job before deploying multiple API replicas.
 - `lock_timeout` and retry policies for operations that acquire locks.
+
+## What I learned
+
+This project gave me practical experience with NestJS modules, controllers, services, dependency injection, DTO validation, and Swagger documentation. I also learned how MikroORM handles entities, migrations, transactions, and database locking, and how Docker Compose provides a reproducible environment for an API and PostgreSQL.
+
+More importantly, I learned how these tools fit together in a small back-end system: HTTP requests are validated at the application boundary, business rules remain in services, transactions protect multi-step operations, database constraints reinforce application rules, and automated tests make those decisions safer to change.
+
+This project does not represent advanced mastery of every technology in the stack. Its purpose was to move beyond introductory study, gain hands-on experience, and practice explaining the technical decisions behind a complete application.
 
 ## Use of AI during development
 

@@ -1,134 +1,101 @@
 # Spec — Products
 
-Cadastro dos produtos de software (licenças compradas) e cálculo de quantas
-vagas estão em uso.
+Software product registration and calculation of purchased seats currently in use. Applies **RN07**, **RN09**, and **RN10**.
 
-Regras aplicadas: **RN07**, **RN09**, **RN10**.
+## Model
 
-## Modelo
-
-| Campo | Tipo | Regras |
+| Field | Type | Rules |
 |---|---|---|
-| id | uuid | PK |
-| name | string | obrigatório, único |
-| vendor | string | obrigatório |
-| monthlyCostCents | integer | obrigatório, ≥ 0 |
-| totalSeats | integer | obrigatório, ≥ 1 |
-| createdAt / updatedAt | timestamptz | automáticos |
+| id | uuid | Primary key |
+| name | string | Required and unique |
+| vendor | string | Required |
+| monthlyCostCents | integer | Required and ≥ 0 |
+| totalSeats | integer | Required and ≥ 1 |
+| createdAt / updatedAt | timestamptz | Automatic |
 
-Campos calculados (não ficam no banco):
-
-- `seatsInUse` = número de atribuições **ativas** (`revokedAt IS NULL`) do produto
-- `seatsAvailable` = `totalSeats − seatsInUse`
+Calculated fields are not stored: `seatsInUse` is the number of active assignments (`revokedAt IS NULL`), and `seatsAvailable = totalSeats − seatsInUse`.
 
 ## Endpoints
 
-| Método | Rota | Corpo | Sucesso | Erros |
+| Method | Route | Body | Success | Errors |
 |---|---|---|---|---|
 | POST | `/products` | `CreateProductDto` | 201 `ProductResponse` | 400, 409 |
 | GET | `/products` | — | 200 `ProductResponse[]` | — |
 | GET | `/products/:id` | — | 200 `ProductResponse` | 400, 404 |
 | PATCH | `/products/:id` | `UpdateProductDto` | 200 `ProductResponse` | 400, 404, 409 |
 
-`CreateProductDto`
-```json
-{ "name": "Microsoft 365 E3", "vendor": "Microsoft", "monthlyCostCents": 18900, "totalSeats": 10 }
-```
+`CreateProductDto` contains `name`, `vendor`, `monthlyCostCents`, and `totalSeats`. `UpdateProductDto` accepts the same fields as optional values. `ProductResponse` adds `id`, timestamps, `seatsInUse`, and `seatsAvailable`.
 
-`UpdateProductDto` — os mesmos campos, todos opcionais.
+## Error messages
 
-`ProductResponse`
-```json
-{
-  "id": "…", "name": "Microsoft 365 E3", "vendor": "Microsoft",
-  "monthlyCostCents": 18900, "totalSeats": 10,
-  "seatsInUse": 7, "seatsAvailable": 3
-}
-```
+| Situation | Status | Message |
+|---|---:|---|
+| Duplicate name | 409 | `Product 'Microsoft 365 E3' already exists` |
+| Missing product | 404 | `Product '<id>' not found` |
+| Reduce below usage | 409 | `Cannot reduce totalSeats of 'Microsoft 365 E3' to 5: 7 seats in use` |
 
-## Mensagens de erro
+## Acceptance criteria
 
-| Situação | Status | Mensagem |
-|---|---|---|
-| Nome duplicado | 409 | `Product 'Microsoft 365 E3' already exists` |
-| Produto inexistente | 404 | `Product '<id>' not found` |
-| Reduzir abaixo do uso | 409 | `Cannot reduce totalSeats of 'Microsoft 365 E3' to 5: 7 seats in use` |
+### PRD-AC01 — creates a product [unit]
+- Given no product named "Microsoft 365 E3"
+- When valid data is sent to `POST /products`
+- Then the response is 201 with `seatsInUse = 0` and `seatsAvailable = totalSeats`
 
-## Critérios de aceite
+### PRD-AC02 — rejects a duplicate name [unit] RN09
+- Given "Microsoft 365 E3" already exists
+- When the same `name` is submitted
+- Then the response is 409 with the documented message and nothing is persisted
 
-### PRD-AC01 — cria produto                                  [unit]
-- Dado   que não existe produto com o nome "Microsoft 365 E3"
-- Quando faço `POST /products` com dados válidos
-- Então  recebo 201 com o produto criado, `seatsInUse = 0` e `seatsAvailable = totalSeats`
+### PRD-AC03 — validates input [pipe]
+- When required fields are missing, costs are negative, seats are below 1, numbers are not integers, or unknown fields are supplied
+- Then the response is 400 with validation errors
 
-### PRD-AC02 — rejeita nome duplicado                        [unit] RN09
-- Dado   que já existe o produto "Microsoft 365 E3"
-- Quando faço `POST /products` com o mesmo `name`
-- Então  recebo 409 com `Product 'Microsoft 365 E3' already exists` e nada é gravado
+### PRD-AC04 — lists calculated seats [unit]
+- Given 10 seats, 7 active assignments, and 2 revoked assignments
+- When products are listed
+- Then `seatsInUse = 7` and `seatsAvailable = 3`; revoked assignments do not count
 
-### PRD-AC03 — valida a entrada                              [pipe]
-- Quando faço `POST /products` sem `name`, com `monthlyCostCents < 0`,
-  com `totalSeats < 1`, com valores não inteiros ou com campos desconhecidos
-- Então  recebo 400 com a lista de erros de validação
+### PRD-AC05 — returns product details [unit]
+- Given an existing product
+- When `GET /products/:id` is requested
+- Then the response is 200 with the complete `ProductResponse`
 
-### PRD-AC04 — lista com vagas calculadas                    [unit]
-- Dado   o produto "Microsoft 365 E3" com `totalSeats = 10`, 7 atribuições ativas e 2 revogadas
-- Quando faço `GET /products`
-- Então  o item desse produto tem `seatsInUse = 7` e `seatsAvailable = 3`
-  (atribuições revogadas não contam)
+### PRD-AC06 — handles a missing product [unit] RN10
+- When a nonexistent ID is used with GET or PATCH
+- Then the response is 404 with `Product '<id>' not found`
 
-### PRD-AC05 — detalha produto                               [unit]
-- Dado   um produto existente
-- Quando faço `GET /products/:id`
-- Então  recebo 200 com o `ProductResponse` (incluindo `seatsInUse` e `seatsAvailable`)
+### PRD-AC07 — updates fields [unit]
+- Given an existing product
+- When `monthlyCostCents` is patched to 19900
+- Then the response contains the new value and leaves other fields unchanged
 
-### PRD-AC06 — produto inexistente                           [unit] RN10
-- Quando faço `GET /products/:id` ou `PATCH /products/:id` com um id que não existe
-- Então  recebo 404 com `Product '<id>' not found`
+### PRD-AC08 — rejects renaming to an existing name [unit] RN09
+- Given "Slack Pro" and "Jira Software"
+- When Jira is renamed to "Slack Pro"
+- Then the response is 409; keeping the product's own current name is not a conflict
 
-### PRD-AC07 — atualiza campos                               [unit]
-- Dado   um produto existente
-- Quando faço `PATCH /products/:id` com `{ "monthlyCostCents": 19900 }`
-- Então  recebo 200 com o valor novo e os outros campos inalterados
+### PRD-AC09 — does not reduce seats below usage [unit] RN07
+- Given 7 seats in use
+- When `totalSeats` is patched to 5
+- Then the response is 409 with the documented message and the product remains unchanged
 
-### PRD-AC08 — rejeita renomear para nome já usado           [unit] RN09
-- Dado   os produtos "Slack Pro" e "Jira Software"
-- Quando faço `PATCH` em "Jira Software" com `{ "name": "Slack Pro" }`
-- Então  recebo 409 com `Product 'Slack Pro' already exists`
-- E      manter o próprio nome (`PATCH` com o nome atual) **não** é conflito
+### PRD-AC10 — can reduce seats to exactly current usage [unit] RN07
+- Given 7 seats in use
+- When `totalSeats` is patched to 7
+- Then the response is 200 with `seatsAvailable = 0`
 
-### PRD-AC09 — não reduz totalSeats abaixo do uso            [unit] RN07
-- Dado   "Microsoft 365 E3" com 7 vagas em uso
-- Quando faço `PATCH` com `{ "totalSeats": 5 }`
-- Então  recebo 409 com `Cannot reduce totalSeats of 'Microsoft 365 E3' to 5: 7 seats in use`
-  e o produto não é alterado
+### PRD-AC11 — concurrent reduction and assignment [unit] [manual] RN07 RN01
+- Given `totalSeats = 10` and 5 seats in use
+- When a reduction to 5 races with new assignments
+- Then `seatsInUse` never exceeds `totalSeats`: either the PATCH wins and assignments receive 409, or assignments win and the PATCH receives 409
+- Product rows are read with `FOR UPDATE` inside both transactions
 
-### PRD-AC10 — pode reduzir até exatamente o uso             [unit] RN07
-- Dado   "Microsoft 365 E3" com 7 vagas em uso
-- Quando faço `PATCH` com `{ "totalSeats": 7 }`
-- Então  recebo 200 com `seatsAvailable = 0`
+### PRD-AC12 — concurrent creation with the same name [unit] [manual] RN09
+- When several requests create "Slack Pro" concurrently
+- Then exactly one receives 201, the rest receive 409, and only one row exists
+- The unique index is the final safeguard when requests pass the service check together
 
-### PRD-AC11 — redução e atribuição simultâneas              [unit] [manual] RN07 RN01
-- Dado   "Slack Pro" com `totalSeats = 10` e 5 vagas em uso
-- Quando um `PATCH { "totalSeats": 5 }` e várias `POST /licenses` desse produto
-  chegam ao mesmo tempo
-- Então  `seatsInUse` nunca fica maior que `totalSeats`: ou o PATCH vence e as
-  atribuições recebem 409 (sem vagas), ou atribuições vencem e o PATCH recebe 409 (RN07)
-- Como   o `PATCH` lê o produto com `FOR UPDATE` numa transação, assim como a
-  atribuição (LIC-AC14)
-
-### PRD-AC12 — criação simultânea com o mesmo nome          [unit] [manual] RN09
-- Dado   que não existe produto com o nome "Slack Pro"
-- Quando várias requisições tentam criar "Slack Pro" ao mesmo tempo
-- Então  exatamente uma recebe 201 e as demais recebem 409 com
-  `Product 'Slack Pro' already exists`
-- E      existe apenas um produto com esse nome
-- Como   o índice único é a proteção final quando as requisições passam juntas
-  pela consulta de disponibilidade
-
-### PRD-AC13 — renomeação simultânea para o mesmo nome      [unit] [manual] RN09
-- Dado   dois produtos com nomes diferentes
-- Quando os dois são renomeados para "Slack Pro" ao mesmo tempo
-- Então  exatamente um recebe 200 e o outro recebe 409 com
-  `Product 'Slack Pro' already exists`
-- E      existe apenas um produto com esse nome
+### PRD-AC13 — concurrent rename to the same name [unit] [manual] RN09
+- Given two differently named products
+- When both are renamed to "Slack Pro" concurrently
+- Then exactly one receives 200, the other receives 409, and only one product has that name

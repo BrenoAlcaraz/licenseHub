@@ -1,36 +1,29 @@
-# Spec — Testes e2e
+# Spec — End-to-end tests
 
-Testes ponta a ponta contra o PostgreSQL de verdade (o do Docker), passando
-por HTTP, `ValidationPipe`, controllers, services, transações e locks.
-Automatizam os critérios `[pipe]` e `[manual]` das outras specs.
+End-to-end tests run against the real PostgreSQL database through HTTP, the global `ValidationPipe`, controllers, services, transactions, and locks. They automate the `[pipe]` and `[manual]` criteria from the other specs.
 
-## Ambiente
+## Environment
 
-- Banco **separado**: `licensehub_e2e` (ou `DB_NAME_E2E`). Os dados do seed no
-  banco de desenvolvimento não são tocados.
-- O MikroORM cria o banco se ele não existir; as **migrations** criam o schema
-  (o mesmo caminho da produção).
-- As tabelas são esvaziadas antes de cada teste: cada cenário é independente.
-- A app de teste usa a mesma configuração da real (`configureApp`: mesmo
-  `ValidationPipe`).
-- Rodar: `docker compose up -d db` e `npm run test:e2e`.
+- A **separate database**, `licensehub_e2e` or `DB_NAME_E2E`, keeps development seed data untouched.
+- MikroORM creates the database when needed; migrations create the schema through the same path used in production.
+- Tables are cleared before every test, so scenarios are independent.
+- The test application uses the same `configureApp` configuration and `ValidationPipe` as the real application.
+- Run `docker compose up -d db`, then `npm run test:e2e`.
 
-## Cenários
+## Scenarios
 
-| ID | Cenário | Cobre |
+| ID | Scenario | Covers |
 |---|---|---|
-| E2E-01 | **Fluxo completo:** criar produto → criar colaborador → atribuir → desligar → a licença foi liberada (`seatsInUse` volta a 0, atribuição revogada com `OFFBOARDING`, detalhe sem licenças ativas) | RN01, RN04, LIC-AC01, EMP-AC05, EMP-AC11 |
-| E2E-02 | **Validação de entrada:** 400 para corpo inválido, campo desconhecido, `status` `OFFBOARDED` no PATCH, `?active=` inválido e `:id` que não é UUID | PRD-AC03, EMP-AC03, EMP-AC09, LIC-AC08, LIC-AC09 |
-| E2E-03 | **Atomicidade do desligamento:** se o `UPDATE` do colaborador falhar (trigger temporário), nenhuma licença é revogada | RN04, EMP-AC11 |
-| E2E-04 | **Relatório ignora revogadas:** depois de revogar, a atribuição sai de `byDepartment` e a vaga vira ociosa | REP-AC05 |
-| E2E-05 | **Última vaga disputada:** 20 colaboradores diferentes, 1 vaga, ao mesmo tempo → 1×201, 19×409, `1/1` | RN01, LIC-AC14 |
-| E2E-06 | **Mesma atribuição em paralelo:** 10 requisições do mesmo par → 1×201, 9×409 | RN03, LIC-AC13 |
-| E2E-07 | **Revogação em paralelo:** 10 revogações da mesma atribuição → 1×200, 9×409 | RN06, LIC-AC15 |
-| E2E-08 | **Desligamento em paralelo:** 10 offboards → 1×200, 9×409; offboard junto com atribuições → nenhuma licença ativa sobra | RN04, RN05, EMP-AC15 |
-| E2E-09 | **Redução de vagas vs. atribuições:** `PATCH totalSeats` junto com atribuições → `seatsInUse ≤ totalSeats` sempre | RN07, PRD-AC11 |
-| E2E-10 | **Alerta em tempo real:** um cliente WebSocket conectado recebe `seats.threshold` quando uma atribuição leva o produto a 9/10 | RT-AC07 |
-| E2E-11 | **RN09 em paralelo:** criações simultâneas do mesmo produto/e-mail e renomeações simultâneas para o mesmo nome → uma tem sucesso, as demais recebem 409 | RN09, PRD-AC12, PRD-AC13, EMP-AC16 |
+| E2E-01 | **Complete flow:** create product → create employee → assign → offboard → verify the seat is released, the assignment is revoked with `OFFBOARDING`, and employee details contain no active licenses | RN01, RN04, LIC-AC01, EMP-AC05, EMP-AC11 |
+| E2E-02 | **Input validation:** 400 for an invalid body, unknown field, `OFFBOARDED` in the status PATCH, invalid `?active=`, and non-UUID `:id` | PRD-AC03, EMP-AC03, EMP-AC09, LIC-AC08, LIC-AC09 |
+| E2E-03 | **Offboarding atomicity:** if the employee `UPDATE` fails through a temporary trigger, no license is revoked | RN04, EMP-AC11 |
+| E2E-04 | **Reports ignore revoked assignments:** after revocation, the assignment leaves `byDepartment` and its seat becomes idle | REP-AC05 |
+| E2E-05 | **Contention for the final seat:** 20 different employees compete for one seat → 1×201, 19×409, final usage `1/1` | RN01, LIC-AC14 |
+| E2E-06 | **Same assignment in parallel:** 10 requests for the same pair → 1×201 and 9×409 | RN03, LIC-AC13 |
+| E2E-07 | **Revocation in parallel:** 10 revocations of one assignment → 1×200 and 9×409 | RN06, LIC-AC15 |
+| E2E-08 | **Offboarding in parallel:** 10 requests → 1×200 and 9×409; offboarding raced with assignments leaves no active license | RN04, RN05, EMP-AC15 |
+| E2E-09 | **Seat reduction vs. assignments:** concurrent `PATCH totalSeats` and assignments always preserve `seatsInUse ≤ totalSeats` | RN07, PRD-AC11 |
+| E2E-10 | **Real-time alert:** a connected WebSocket client receives `seats.threshold` when an assignment brings a product to 9/10 | RT-AC07 |
+| E2E-11 | **RN09 in parallel:** simultaneous creation with the same product name/email and simultaneous renames to the same name produce one success and 409 for the rest | RN09, PRD-AC12, PRD-AC13, EMP-AC16 |
 
-Nos cenários de concorrência, a asserção principal é o **invariante** (ex.:
-`seatsInUse ≤ totalSeats`, no máximo 1 sucesso), que vale qualquer que seja a
-ordem em que o banco processa as requisições.
+For concurrency scenarios, the main assertion is the **invariant**—for example, `seatsInUse ≤ totalSeats` or at most one success—regardless of the order in which the database processes requests.

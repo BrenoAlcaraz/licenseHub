@@ -1,65 +1,57 @@
-# Spec — Alerta em tempo real (WebSocket)
+# Spec — Real-time alert (WebSocket)
 
-Avisar o TI, na hora, quando um produto está quase lotado, antes de alguém
-receber um 409 por falta de vagas.
+Notify IT immediately when a product is nearly full, before an assignment receives a 409 because no seats remain.
 
-## Canal
+## Channel
 
-- **Socket.IO** no mesmo servidor e porta da API (`http://localhost:3000`),
-  namespace padrão (`/`).
-- Gateway do NestJS: `SeatsThresholdGateway` (módulo `licenses`).
-- Sem autenticação (fora do escopo, como no resto da API).
+- **Socket.IO** runs on the same server and port as the API (`http://localhost:3000`) in the default namespace (`/`).
+- NestJS gateway: `SeatsThresholdGateway` in the `licenses` module.
+- No authentication, consistent with the rest of the API and the defined scope.
 
-## Evento `seats.threshold`
+## `seats.threshold` event
 
-Emitido para **todos os clientes conectados** quando, **após uma atribuição**,
-o produto fica com **90% ou mais** das vagas em uso.
+Broadcast to **all connected clients** when a successful assignment leaves the product at **90% or more** seat usage.
 
 ```json
 { "productId": "…", "productName": "Microsoft 365 E3", "seatsInUse": 9, "totalSeats": 10 }
 ```
 
-- `seatsInUse` já inclui a atribuição que acabou de ser feita.
-- O limite é comparado com **inteiros** (`seatsInUse × 100 ≥ totalSeats × 90`),
-  não com `float`. Com 90% o `float` por acaso funciona, mas para outros
-  percentuais não: com 7%, `100 × 0.07` dá `7.000000000000001` e exatamente
-  7/100 não dispararia (11 percentuais entre 1% e 99% têm esse problema). Com
-  inteiros, o limite pode mudar sem risco.
-- É emitido **depois do commit** da transação: nunca avisa sobre uma atribuição
-  que acabou não sendo salva.
-- Só atribuições disparam o evento (revogar, desligar ou mudar `totalSeats`, não).
+- `seatsInUse` includes the assignment that just completed.
+- The threshold uses integer arithmetic: `seatsInUse × 100 ≥ totalSeats × 90`. This avoids floating-point edge cases and allows the percentage to change safely.
+- The event is emitted **after the transaction commits**, so clients are never notified about an assignment that was not persisted.
+- Only assignments emit this event. Revocation, offboarding, and `totalSeats` changes do not.
 
-## Critérios de aceite
+## Acceptance criteria
 
-### RT-AC01 — avisa ao atingir 90%                            [unit]
-- Dado   um produto com `totalSeats = 10` e 8 em uso
-- Quando faço uma atribuição com sucesso (9/10)
-- Então  o evento `seats.threshold` é emitido com `seatsInUse = 9` e `totalSeats = 10`
+### RT-AC01 — alerts when usage reaches 90% [unit]
+- Given a product with `totalSeats = 10` and 8 seats in use
+- When a license is assigned successfully, reaching 9/10
+- Then `seats.threshold` is emitted with `seatsInUse = 9` and `totalSeats = 10`
 
-### RT-AC02 — não avisa abaixo de 90%                         [unit]
-- Dado   um produto com `totalSeats = 10` e 7 em uso
-- Quando faço uma atribuição com sucesso (8/10)
-- Então  nenhum evento é emitido
+### RT-AC02 — does not alert below 90% [unit]
+- Given a product with `totalSeats = 10` and 7 seats in use
+- When a license is assigned successfully, reaching 8/10
+- Then no event is emitted
 
-### RT-AC03 — continua avisando acima de 90%                  [unit]
-- Dado   um produto com `totalSeats = 10` e 9 em uso
-- Quando faço a atribuição da última vaga (10/10)
-- Então  o evento é emitido com `seatsInUse = 10`
+### RT-AC03 — continues alerting above 90% [unit]
+- Given a product with `totalSeats = 10` and 9 seats in use
+- When the final seat is assigned
+- Then the event is emitted with `seatsInUse = 10`
 
-### RT-AC04 — exatamente no limite                            [unit]
-- Dado   um produto com `totalSeats = 70` e 62 em uso
-- Quando faço uma atribuição (63/70 = exatamente 90%)
-- Então  o evento é emitido (o limite é inclusivo: "90% **ou mais**")
+### RT-AC04 — alerts exactly at the threshold [unit]
+- Given a product with `totalSeats = 70` and 62 seats in use
+- When an assignment reaches 63/70, exactly 90%
+- Then the event is emitted because the threshold is inclusive
 
-### RT-AC05 — atribuição recusada não avisa                   [unit]
-- Quando uma atribuição falha (404, 409 de qualquer regra)
-- Então  nenhum evento é emitido
+### RT-AC05 — rejected assignments do not alert [unit]
+- When an assignment fails with 404 or any 409 business-rule error
+- Then no event is emitted
 
-### RT-AC06 — só depois do commit                             [unit]
-- Quando uma atribuição atinge o limite
-- Então  o evento é emitido **depois** de a transação terminar, não dentro dela
+### RT-AC06 — emits only after commit [unit]
+- When an assignment reaches the threshold
+- Then the event is emitted after the transaction finishes, not inside it
 
-### RT-AC07 — cliente conectado recebe o evento               [e2e] (E2E-10)
-- Dado   um cliente Socket.IO conectado em `ws://localhost:<porta>/socket.io/`
-- Quando uma atribuição via `POST /licenses` leva o produto a 9/10
-- Então  o cliente recebe `seats.threshold` com o payload acima
+### RT-AC07 — a connected client receives the event [e2e] (E2E-10)
+- Given a Socket.IO client connected to `ws://localhost:<port>/socket.io/`
+- When `POST /licenses` brings a product to 9/10
+- Then the client receives `seats.threshold` with the payload above

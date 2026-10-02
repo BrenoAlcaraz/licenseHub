@@ -1,337 +1,107 @@
-# Spec — Dashboard web
+# Spec — Web dashboard
 
-Interface gráfica mínima para demonstrar os fluxos do LicenseHub no navegador.
-O dashboard torna visíveis a ocupação, os custos e as chamadas HTTP/WebSocket,
-sem transformar o projeto em uma aplicação full-stack de escopo aberto.
+A minimal browser interface that demonstrates LicenseHub flows and makes usage, costs, HTTP calls, and WebSocket events visible. This is an approved exception to the original front-end exclusion and covers only the behavior in this specification.
 
-Esta é uma **exceção aprovada** ao item "Front-end" da lista original de fora do
-escopo. A exceção cobre somente o comportamento descrito nesta spec.
+## Goal
 
-## Objetivo
+The dashboard allows a reviewer to view costs and idle seats; create and edit products; create and filter employees; assign and revoke licenses; place employees on leave, reactivate them, or offboard them; and see real-time seat-threshold alerts.
 
-Permitir que uma pessoa avaliando o projeto consiga, sem montar JSON ou copiar
-UUIDs manualmente:
+## Boundaries
 
-- entender quanto a empresa paga e quanto pode economizar;
-- visualizar vagas compradas, ocupadas e ociosas por produto;
-- cadastrar produtos e colaboradores;
-- atribuir e revogar licenças;
-- colocar um colaborador em férias, reativá-lo ou desligá-lo;
-- observar o alerta `seats.threshold` em tempo real;
-- abrir o Swagger quando quiser inspecionar a interface HTTP completa.
+- One page served at `GET /` by the same NestJS process, port, and container.
+- Swagger remains available at `/docs`.
+- The UI uses only existing REST endpoints and WebSocket events. It adds no UI-specific API.
+- Relative paths keep the UI on the same origin without CORS or backend URL configuration.
+- Plain HTML, CSS, and TypeScript with no framework, chart library, state manager, new dependency, or CDN asset.
+- No authentication, authorization, pagination, cache, import/export, or new business rule.
+- The interface and code-facing text are in English. Backend messages are displayed unchanged.
 
-## Limites da solução
+## Architecture
 
-- Uma única página, servida em `GET /` pelo mesmo processo, porta e container da
-  aplicação NestJS.
-- O Swagger continua disponível em `GET /docs`.
-- O dashboard usa somente os endpoints e o evento WebSocket já existentes. Não
-  serão criados endpoints exclusivos para a interface.
-- Mesma origem da aplicação: as chamadas usam caminhos relativos (`/products`,
-  `/employees`, etc.); não há configuração de CORS nem URL de backend no código.
-- HTML, CSS e TypeScript do navegador, sem React, Vue, Angular, framework de CSS,
-  biblioteca de gráficos ou gerenciador de estado.
-- Nenhuma nova dependência de produção ou desenvolvimento. Os assets são servidos
-  pelo `@nestjs/platform-express`, que já faz parte do projeto, e o TypeScript já
-  instalado compila o código do navegador.
-- Nenhum asset carregado de CDN: o dashboard deve funcionar sem acesso à internet.
-- Sem autenticação, autorização, paginação, cache, importação/exportação ou novas
-  regras de negócio.
-- A interface é em português. Nomes no código permanecem em inglês. Mensagens
-  retornadas pela aplicação são mostradas sem tradução.
-
-## Arquitetura e seam
-
-O dashboard é um **adapter** do navegador no seam HTTP/WebSocket já existente:
+The dashboard is a browser adapter over the existing HTTP/WebSocket seam:
 
 ```text
-Browser (dashboard)
-   |-- fetch() ----------> controllers REST --> services --> MikroORM --> PostgreSQL
-   `-- Socket.IO <------- SeatsThresholdGateway
+Browser UI → REST controllers → services → PostgreSQL
+Browser UI ← seats.threshold ← Socket.IO gateway
 ```
 
-Os services continuam sendo os módulos que implementam RN01–RN10. O dashboard
-não antecipa nem replica essas regras: desabilitar uma ação óbvia melhora a
-experiência, mas o backend permanece a autoridade e seus erros 400/404/409 são
-sempre tratados. Assim, concorrência e dados desatualizados continuam seguros.
+Services remain authoritative for RN01–RN10. The browser may disable obviously invalid actions for usability, but it never duplicates business rules and always handles backend 400/404/409 responses.
 
-## Estrutura prevista
+## Navigation and views
 
-```text
-src/
-├── main.ts                 # registra os assets estáticos
-└── web/
-    ├── index.html          # estrutura e formulários da página
-    ├── styles.css          # layout responsivo, tabelas, badges e barras
-    └── dashboard.ts        # fetch, renderização e conexão Socket.IO
-```
+The single page has Overview, Products, Employees, and Assignments sections. The header shows real-time connection status and links to Swagger.
 
-O build do Nest deve copiar `index.html` e `styles.css` e compilar
-`dashboard.ts` para `dist/web`. O Dockerfile continua copiando apenas `dist` para
-a imagem final.
+- **Overview:** total monthly cost, potential savings, active-license count, idle-seat count, cost by department, and waste by product from `GET /reports/costs`.
+- **Products:** name, vendor, monthly cost, total seats, used seats, available seats, and an explicit usage bar. Products at 90% or more receive an additional visual cue.
+- **Employees:** status/department filters, employee details, active licenses, status changes, and offboarding.
+- **Assignments:** product/employee/active filters, complete assignment history, assignment, and manual revocation.
 
-## Navegação
+Money remains integer cents over HTTP and is formatted as Brazilian reais only for display. Dates remain UTC over HTTP and are displayed in the browser's local time.
 
-A página tem navegação interna para quatro áreas. Não há roteamento no navegador
-nem URLs adicionais:
+## Mutations and refresh behavior
 
-| Área | Finalidade |
-|---|---|
-| Visão geral | Indicadores de custo, uso e desperdício |
-| Produtos | Cadastro, edição e ocupação das vagas |
-| Colaboradores | Cadastro, filtros, licenças e mudanças de status |
-| Atribuições | Atribuição, histórico, filtros e revogação |
+- Product forms send only `name`, `vendor`, `monthlyCostCents`, and `totalSeats`. Currency text is converted exactly to integer cents.
+- Employee creation sends `name`, `email`, and `department`; status defaults on the backend.
+- Status changes use `PATCH /employees/:id/status`; `ON_LEAVE` retains existing licenses.
+- Offboarding requires confirmation and uses `POST /employees/:id/offboard`. The UI displays the count and savings returned by the backend instead of calculating them.
+- Assignment selectors are populated from product and employee endpoints. Availability is informative; the backend still enforces RN01–RN03.
+- Revocation is available only for active assignments and requires confirmation.
+- After every successful mutation, reports, products, employees, and assignments are fetched again. The active action button is disabled while the request runs.
 
-O cabeçalho contém o estado da conexão em tempo real e um link visível para
-`/docs`.
+## Feedback, accessibility, and WebSocket behavior
 
-## Visão geral
+- Successful mutations show a short confirmation.
+- Backend status and message bodies are shown unchanged, including each item in a `ValidationPipe` message array.
+- Network and invalid-JSON failures have dedicated English messages; existing screen data is preserved.
+- Initial loading and each empty list have explicit states.
+- Every field has a label, actions are keyboard accessible, feedback uses `aria-live`, and narrow screens can scroll tables horizontally.
+- The page connects Socket.IO to the default namespace on the same host. Connection state is visible, `seats.threshold` notices are dismissible, and socket disconnection never blocks HTTP actions.
 
-Dados obtidos de `GET /reports/costs`:
+## Acceptance criteria
 
-- **Custo mensal total:** `totalMonthlyCostCents`;
-- **Economia mensal potencial:** `potentialMonthlySavingsCents`;
-- **Licenças ativas:** soma de `byDepartment[].activeLicenses`;
-- **Vagas ociosas:** soma de `idleSeats[].idleSeats`;
-- custo e quantidade de licenças ativas por departamento;
-- produtos com vagas ociosas e seu desperdício mensal.
+### UI-AC01 — serves the interface from the same server [e2e]
+- Given the running application
+- When `GET /` is requested
+- Then dashboard HTML and local assets return 200, and `/docs` remains available
 
-Valores em centavos são convertidos somente na apresentação e formatados em
-reais (`pt-BR`, por exemplo `18900` → `R$ 189,00`). Nenhum valor decimal é
-enviado de volta à aplicação.
+### UI-AC02 — shows the overview [manual]
+- Given seed data
+- When the dashboard opens
+- Then totals, savings, active licenses, idle seats, department costs, and product waste match the report
 
-As listas preservam a ordenação entregue por `GET /reports/costs`; o navegador
-não aplica outra regra de ordenação.
+### UI-AC03 — creates and edits a product [manual]
+- Entering `189.00` sends `monthlyCostCents: 18900`; POST/PATCH results appear after refresh
 
-## Produtos
+### UI-AC04 — creates, filters, and details an employee [manual]
+- A newly created employee appears as ACTIVE; filters use query parameters; details show only active licenses
 
-### Lista
+### UI-AC05 — leave preserves licenses [manual] RN08
+- Choosing "Place on leave" sends `ON_LEAVE`, updates status, and keeps existing licenses visible
 
-- Carrega `GET /products`.
-- Mostra nome, fornecedor, custo mensal por licença, `totalSeats`, `seatsInUse`
-  e `seatsAvailable`.
-- Mostra uma barra de ocupação com texto explícito, por exemplo `7 de 10 em uso`;
-  a cor nunca é a única forma de comunicar o estado.
-- Produtos com ocupação de 90% ou mais recebem destaque visual coerente com o
-  limite do evento `seats.threshold`.
+### UI-AC06 — offboarding shows the backend result [manual] RN04 RN05
+- Confirmed offboarding calls the endpoint, shows returned revoked count and savings, and refreshes all datasets
 
-### Criar
+### UI-AC07 — assigns and revokes a license [manual] RN01 RN02 RN03 RN06
+- Selecting a product and ACTIVE employee creates an assignment; confirmed revocation leaves it visible in history
 
-O formulário envia `POST /products` com:
+### UI-AC08 — exposes backend errors [manual]
+- A 400, 404, or 409 displays its status and message without removing already loaded data
 
-```json
-{ "name": "Microsoft 365 E3", "vendor": "Microsoft", "monthlyCostCents": 18900, "totalSeats": 10 }
-```
+### UI-AC09 — does not trust stale availability [manual] RN01
+- If another request takes the last displayed seat, the assignment's 409 is shown and the next refresh displays actual usage
 
-Na interface, o custo é preenchido em reais com até duas casas decimais (por
-exemplo, `189,00`). Antes da chamada HTTP, o dashboard converte esse valor de
-forma exata para o inteiro `monthlyCostCents: 18900`; valores decimais nunca são
-enviados ao backend. `totalSeats` continua sendo preenchido como inteiro. A
-validação definitiva dos campos enviados continua no backend.
+### UI-AC10 — displays real-time alerts [manual] RT-AC01
+- At 90% or more usage, the dashboard shows product name, usage, and total; socket disconnection does not stop HTTP operations
 
-### Editar
+### UI-AC11 — handles loading and empty data [manual]
+- Initial requests show `Loading…`; empty lists show specific messages without breaking navigation
 
-- A ação abre um formulário preenchido com os valores atuais.
-- O custo retornado em centavos é apresentado em reais no formulário (por
-  exemplo, `18900` é exibido como `189,00`) e convertido novamente para centavos
-  ao salvar.
-- Envia `PATCH /products/:id` somente com os campos editáveis da interface:
-  `name`, `vendor`, `monthlyCostCents` e `totalSeats`.
-- RN07 e RN09 não são reimplementadas; um 409 é mostrado conforme a seção
-  "Erros e feedback".
+### UI-AC12 — works in Docker without internet access [manual]
+- `docker compose up --build` serves the API, dashboard, Swagger, and Socket.IO at the same address without external assets
 
-## Colaboradores
+### UI-AC13 — does not duplicate business rules [manual]
+- The implementation contains no independent RN01–RN10 or offboarding-savings calculations and performs every mutation through existing HTTP interfaces
 
-### Lista e filtros
+## Out of scope
 
-- Carrega `GET /employees`.
-- Permite combinar `status` e `department`, usando os mesmos query params do
-  endpoint.
-- Mostra nome, e-mail, departamento, status e data de desligamento, quando houver.
-- Os três status têm texto explícito: `ACTIVE`, `ON_LEAVE` e `OFFBOARDED`.
-
-### Criar
-
-Envia `POST /employees` com `name`, `email` e `department`. O dashboard não envia
-`status`; o backend cria o colaborador como `ACTIVE`.
-
-### Detalhar e mudar status
-
-- Ao abrir um colaborador, carrega `GET /employees/:id` e mostra somente suas
-  licenças ativas, conforme a resposta do endpoint.
-- Para `ACTIVE`, oferece "Colocar em férias" e envia
-  `PATCH /employees/:id/status` com `ON_LEAVE`.
-- Para `ON_LEAVE`, oferece "Reativar" e envia o mesmo endpoint com `ACTIVE`.
-- Para `OFFBOARDED`, não oferece mudança de status nem nova atribuição.
-- Colocar em férias não apresenta qualquer mensagem de revogação; RN08 mantém as
-  licenças existentes.
-
-### Desligar
-
-- Disponível para colaboradores `ACTIVE` e `ON_LEAVE`.
-- Exige confirmação que identifica o colaborador e informa que todas as licenças
-  ativas serão revogadas.
-- Envia `POST /employees/:id/offboard` somente depois da confirmação.
-- No sucesso, mostra `revokedLicenses` e `monthlySavingsCents` retornados pelo
-  backend; esses valores não são calculados antecipadamente no navegador.
-
-## Atribuições
-
-### Lista e filtros
-
-- Carrega `GET /licenses`.
-- Permite combinar os filtros `productId`, `employeeId` e `active`.
-- Mostra produto, colaborador, `assignedAt`, situação ativa/revogada,
-  `revokedAt` e `revokeReason`.
-- Datas são exibidas no fuso local do navegador, mantendo os valores HTTP em UTC.
-
-### Atribuir
-
-- O formulário usa seletores alimentados por `GET /products` e
-  `GET /employees` para evitar cópia manual de UUIDs.
-- Na apresentação, prioriza produtos com vagas e colaboradores `ACTIVE`.
-- Envia `POST /licenses` com `productId` e `employeeId`.
-- A disponibilidade mostrada é apenas informativa: RN01–RN03 continuam sendo
-  verificadas pelo backend no momento da requisição.
-
-### Revogar
-
-- A ação aparece somente em atribuições ativas.
-- Exige confirmação que identifica produto e colaborador.
-- Envia `POST /licenses/:id/revoke` e usa a resposta do backend como resultado.
-
-## Atualização dos dados
-
-- O carregamento inicial busca relatório, produtos, colaboradores e atribuições.
-- Depois de qualquer mutação bem-sucedida, o dashboard busca novamente esses
-  quatro conjuntos. Para o volume sem paginação deste projeto, prioriza-se
-  simplicidade e consistência em vez de cache ou atualização otimista.
-- Enquanto uma ação está em andamento, seu botão fica desabilitado para evitar
-  duplo clique acidental.
-- A interface não assume sucesso antes da resposta HTTP.
-
-## Erros e feedback
-
-- Sucesso em mutações gera uma confirmação curta e identificável.
-- Respostas 400, 404 e 409 mostram o status HTTP e o campo `message` devolvido
-  pela aplicação.
-- Quando `message` é um array do `ValidationPipe`, cada item é exibido.
-- A mensagem não é substituída por texto genérico nem traduzida, pois faz parte
-  do comportamento documentado dos módulos de domínio.
-- Falha de rede ou resposta sem JSON mostra uma mensagem própria em português e
-  permite tentar novamente.
-- Um erro em uma ação não apaga os dados que já estavam visíveis.
-
-## Estados visuais e acessibilidade
-
-- O primeiro carregamento mostra estado `Carregando…`; não exibe zeros que
-  possam ser confundidos com dados reais.
-- Cada lista tem estado vazio específico, como `Nenhum produto cadastrado`.
-- Formulários têm `label` associado a cada campo e podem ser usados por teclado.
-- Confirmações e erros recebem foco ou usam uma região `aria-live`.
-- Tabelas podem rolar horizontalmente em telas estreitas; ações continuam
-  acessíveis sem exigir uma largura fixa de desktop.
-- A interface permanece utilizável sem depender somente de cor, animação ou
-  ícones sem texto.
-
-## WebSocket
-
-- Ao carregar, conecta Socket.IO ao mesmo host e namespace padrão (`/`).
-- O cabeçalho mostra `Tempo real conectado` ou `Tempo real desconectado`.
-- Ao receber `seats.threshold`, mostra um aviso com produto, vagas em uso e total.
-- Os avisos existem somente durante a sessão atual; não há histórico persistido.
-- Desconexão do Socket.IO não bloqueia chamadas HTTP nem impede o uso do dashboard.
-
-## Critérios de aceite
-
-### UI-AC01 — entrega a interface no mesmo servidor          [e2e]
-- Dado   a aplicação iniciada
-- Quando faço `GET /`
-- Então  recebo 200 com o HTML do dashboard
-- E      seus assets locais respondem 200
-- E      `GET /docs` continua disponível
-
-### UI-AC02 — mostra a visão geral                            [manual]
-- Dado   os dados do seed
-- Quando abro o dashboard
-- Então  vejo custo total, economia potencial, licenças ativas, vagas ociosas,
-  custos por departamento e desperdício por produto com os valores do relatório
-
-### UI-AC03 — cria e edita produto                            [manual]
-- Quando crio um produto com custo `189,00` pela interface
-- Então  o dashboard envia `POST /products` com `monthlyCostCents: 18900`,
-  confirma o sucesso e atualiza a lista
-- E      quando edito o produto, envia `PATCH /products/:id` e mostra o resultado
-
-### UI-AC04 — cria, filtra e detalha colaborador              [manual]
-- Quando crio um colaborador pela interface
-- Então  ele aparece como `ACTIVE`
-- E      filtros de status/departamento usam `GET /employees` com query params
-- E      o detalhe mostra apenas suas licenças ativas
-
-### UI-AC05 — férias preservam licenças                       [manual] RN08
-- Dado   um colaborador `ACTIVE` com licenças
-- Quando escolho "Colocar em férias"
-- Então  o dashboard envia o PATCH com `ON_LEAVE`, atualiza o status e as licenças
-  continuam visíveis no detalhe
-
-### UI-AC06 — desligamento mostra o efeito real               [manual] RN04 RN05
-- Dado   um colaborador `ACTIVE` ou `ON_LEAVE`
-- Quando confirmo seu desligamento
-- Então  o dashboard envia `POST /employees/:id/offboard`
-- E      mostra a contagem e a economia retornadas pelo backend
-- E      atualiza produtos, colaboradores, atribuições e relatório
-
-### UI-AC07 — atribui e revoga licença                        [manual] RN01 RN02 RN03 RN06
-- Dado   um produto com vaga e um colaborador `ACTIVE`
-- Quando seleciono os dois e confirmo a atribuição
-- Então  o dashboard envia `POST /licenses` e atualiza a ocupação
-- E      posso confirmar a revogação da atribuição ativa e vê-la no histórico
-
-### UI-AC08 — expõe erros do backend                          [manual]
-- Quando uma ação recebe 400, 404 ou 409
-- Então  vejo o status e a mensagem devolvida pela aplicação
-- E      os dados já carregados permanecem na tela
-
-### UI-AC09 — não confia em disponibilidade desatualizada     [manual] RN01
-- Dado   que a tela ainda mostra uma vaga, mas outra requisição ocupa a última
-- Quando tento atribuir pela interface
-- Então  o 409 do backend é mostrado e a atualização seguinte exibe a ocupação real
-
-### UI-AC10 — mostra alerta em tempo real                     [manual] RT-AC01
-- Dado   o dashboard conectado ao Socket.IO
-- Quando uma atribuição leva um produto a 90% ou mais
-- Então  vejo o aviso `seats.threshold` com nome, uso e total do produto
-- E      uma desconexão do socket não impede as operações HTTP
-
-### UI-AC11 — trata carregamento e dados vazios               [manual]
-- Enquanto as consultas iniciais não terminam
-- Então  vejo `Carregando…`, não indicadores zerados
-- E      listas vazias mostram mensagens específicas sem quebrar a navegação
-
-### UI-AC12 — funciona no fluxo Docker                        [manual]
-- Dado   um ambiente sem acesso à internet
-- Quando executo `docker compose up --build`
-- Então  aplicação, dashboard, Swagger e Socket.IO funcionam no mesmo endereço
-  sem container, servidor ou comando adicional para a interface
-
-### UI-AC13 — não duplica regras de negócio                   [manual]
-- Quando inspeciono a implementação do dashboard
-- Então  não encontro cálculo próprio de RN01–RN10, custo do offboarding ou
-  alteração direta de banco
-- E      todas as mutações passam pelas interfaces HTTP existentes
-
-## Fora do escopo desta exceção
-
-- login, permissões e usuários da interface;
-- edição ou exclusão de atribuições históricas;
-- exclusão de produtos ou colaboradores;
-- rotas próprias no navegador;
-- gráficos complexos, temas, internacionalização ou personalização visual;
-- polling ou sincronização automática entre várias abas;
-- exportação CSV/PDF;
-- testes end-to-end de navegador com Playwright, Cypress ou dependência similar.
-
-O teste automatizado desta etapa cobre a entrega dos assets. Os fluxos HTTP e as
-regras de negócio continuam cobertos pelos testes existentes; os comportamentos
-visuais são verificados pelo checklist `[manual]` acima.
+Login and UI users, deletion of historical assignments/products/employees, browser-side routes, complex charts and themes, internationalization, cross-tab polling, CSV/PDF export, and browser E2E tooling such as Playwright or Cypress.

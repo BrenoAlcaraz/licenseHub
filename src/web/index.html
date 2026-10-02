@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Dashboard do LicenseHub para gestão de licenças de software"
+      content="LicenseHub dashboard for software license management"
     />
     <title>LicenseHub</title>
     <link rel="stylesheet" href="/styles.css" />
@@ -13,43 +13,43 @@
   <body>
     <div class="app-shell">
       <aside class="sidebar">
-        <a class="brand" href="#overview" aria-label="LicenseHub — início">
+        <a class="brand" href="#overview" aria-label="LicenseHub — home">
           <span class="brand-mark" aria-hidden="true">L</span>
           <span>
             <strong>LicenseHub</strong>
-            <small>Gestão de licenças</small>
+            <small>License management</small>
           </span>
         </a>
 
-        <nav aria-label="Navegação principal">
+        <nav aria-label="Main navigation">
           <button class="nav-item active" data-section="overview" type="button">
-            <span aria-hidden="true">◫</span> Visão geral
+            <span aria-hidden="true">◫</span> Overview
           </button>
           <button class="nav-item" data-section="products" type="button">
-            <span aria-hidden="true">▣</span> Produtos
+            <span aria-hidden="true">▣</span> Products
           </button>
           <button class="nav-item" data-section="employees" type="button">
-            <span aria-hidden="true">◎</span> Colaboradores
+            <span aria-hidden="true">◎</span> Employees
           </button>
           <button class="nav-item" data-section="licenses" type="button">
-            <span aria-hidden="true">◇</span> Atribuições
+            <span aria-hidden="true">◇</span> Assignments
           </button>
         </nav>
 
         <a class="docs-link" href="/docs" target="_blank" rel="noreferrer">
-          Abrir Swagger <span aria-hidden="true">↗</span>
+          Open Swagger <span aria-hidden="true">↗</span>
         </a>
       </aside>
 
       <main>
         <header class="topbar">
           <div>
-            <p class="eyebrow">PAINEL DE CONTROLE</p>
-            <h1 id="page-title">Visão geral</h1>
+            <p class="eyebrow">DASHBOARD</p>
+            <h1 id="page-title">Overview</h1>
           </div>
           <div class="realtime disconnected" id="realtime-status" role="status">
             <span class="status-dot" aria-hidden="true"></span>
-            <span>Tempo real desconectado</span>
+            <span>Real-time disconnected</span>
           </div>
         </header>
 
@@ -57,7 +57,7 @@
         <div id="socket-alerts" class="socket-alerts" aria-live="polite"></div>
 
         <section id="overview-section" class="page-section active" aria-labelledby="page-title">
-          <div id="overview-loading" class="loading-state">Carregando…</div>
+          <div id="overview-loading" class="loading-state">Loading…</div>
           <div id="overview-content" hidden>
             <div class="metrics" id="metrics"></div>
 
@@ -65,8 +65,8 @@
               <article class="panel">
                 <div class="panel-heading">
                   <div>
-                    <p class="eyebrow">DISTRIBUIÇÃO</p>
-                    <h2>Custos por departamento</h2>
+                    <p class="eyebrow">DISTRIBUTION</p>
+                    <h2>Costs by department</h2>
                   </div>
                 </div>
                 <div id="department-costs"></div>
@@ -75,8 +75,8 @@
               <article class="panel">
                 <div class="panel-heading">
                   <div>
-                    <p class="eyebrow">OPORTUNIDADES</p>
-                    <h2>Vagas ociosas</h2>
+                    <p class="eyebrow">OPPORTUNITIES</p>
+                    <h2>Idle seats</h2>
                   </div>
                 </div>
                 <div id="idle-seats"></div>
@@ -88,12 +88,12 @@
         <section id="products-section" class="page-section" aria-labelledby="products-title" hidden>
           <div class="section-heading">
             <div>
-              <p class="eyebrow">CATÁLOGO</p>
-              <h2 id="products-title">Produtos</h2>
-              <p>Acompanhe custos e ocupação das licenças contratadas.</p>
+              <p class="eyebrow">CATALOG</p>
+              <h2 id="products-title">Products</h2>
+              <p>Track the cost and usage of purchased licenses.</p>
             </div>
             <button class="primary-button" id="new-product-button" type="button">
-              + Novo produto
+              + New product
             </button>
           </div>
           <article class="panel">
@@ -101,30 +101,30 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Produto</th>
-                    <th>Fornecedor</th>
-                    <th>Custo por licença</th>
-                    <th>Ocupação</th>
-                    <th>Disponíveis</th>
-                    <th><span class="sr-only">Ações</span></th>
+                    <th>Product</th>
+                    <th>Vendor</th>
+                    <th>Cost per license</th>
+                    <th>Usage</th>
+                    <th>Available</th>
+                    <th><span class="sr-only">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody id="products-table"></tbody>
               </table>
             </div>
-            <div id="products-empty" class="empty-state" hidden>Nenhum produto cadastrado.</div>
+            <div id="products-empty" class="empty-state" hidden>No products found.</div>
           </article>
         </section>
 
         <section id="employees-section" class="page-section" aria-labelledby="employees-title" hidden>
           <div class="section-heading">
             <div>
-              <p class="eyebrow">EQUIPE</p>
-              <h2 id="employees-title">Colaboradores</h2>
-              <p>Consulte licenças e gerencie o ciclo de cada colaborador.</p>
+              <p class="eyebrow">TEAM</p>
+              <h2 id="employees-title">Employees</h2>
+              <p>View licenses and manage each employee's lifecycle.</p>
             </div>
             <button class="primary-button" id="new-employee-button" type="button">
-              + Novo colaborador
+              + New employee
             </button>
           </div>
 
@@ -132,18 +132,18 @@
             <div class="field compact">
               <label for="employee-status-filter">Status</label>
               <select id="employee-status-filter" name="status">
-                <option value="">Todos</option>
+                <option value="">All</option>
                 <option value="ACTIVE">ACTIVE</option>
                 <option value="ON_LEAVE">ON_LEAVE</option>
                 <option value="OFFBOARDED">OFFBOARDED</option>
               </select>
             </div>
             <div class="field compact">
-              <label for="employee-department-filter">Departamento</label>
-              <input id="employee-department-filter" name="department" placeholder="Todos" />
+              <label for="employee-department-filter">Department</label>
+              <input id="employee-department-filter" name="department" placeholder="All" />
             </div>
-            <button class="secondary-button filter-button" type="submit">Filtrar</button>
-            <button class="text-button" id="clear-employee-filters" type="button">Limpar</button>
+            <button class="secondary-button filter-button" type="submit">Filter</button>
+            <button class="text-button" id="clear-employee-filters" type="button">Clear</button>
           </form>
 
           <article class="panel">
@@ -151,55 +151,55 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Colaborador</th>
-                    <th>Departamento</th>
+                    <th>Employee</th>
+                    <th>Department</th>
                     <th>Status</th>
-                    <th>Desligamento</th>
-                    <th><span class="sr-only">Ações</span></th>
+                    <th>Offboarded at</th>
+                    <th><span class="sr-only">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody id="employees-table"></tbody>
               </table>
             </div>
-            <div id="employees-empty" class="empty-state" hidden>Nenhum colaborador encontrado.</div>
+            <div id="employees-empty" class="empty-state" hidden>No employees found.</div>
           </article>
         </section>
 
         <section id="licenses-section" class="page-section" aria-labelledby="licenses-title" hidden>
           <div class="section-heading">
             <div>
-              <p class="eyebrow">HISTÓRICO</p>
-              <h2 id="licenses-title">Atribuições</h2>
-              <p>Atribua licenças e consulte todo o histórico de revogações.</p>
+              <p class="eyebrow">HISTORY</p>
+              <h2 id="licenses-title">Assignments</h2>
+              <p>Assign licenses and view the complete revocation history.</p>
             </div>
             <button class="primary-button" id="new-license-button" type="button">
-              + Atribuir licença
+              + Assign license
             </button>
           </div>
 
           <form id="license-filters" class="filter-bar wide">
             <div class="field compact">
-              <label for="license-product-filter">Produto</label>
+              <label for="license-product-filter">Product</label>
               <select id="license-product-filter" name="productId">
-                <option value="">Todos</option>
+                <option value="">All</option>
               </select>
             </div>
             <div class="field compact">
-              <label for="license-employee-filter">Colaborador</label>
+              <label for="license-employee-filter">Employee</label>
               <select id="license-employee-filter" name="employeeId">
-                <option value="">Todos</option>
+                <option value="">All</option>
               </select>
             </div>
             <div class="field compact">
-              <label for="license-active-filter">Situação</label>
+              <label for="license-active-filter">Status</label>
               <select id="license-active-filter" name="active">
-                <option value="">Todas</option>
-                <option value="true">Ativas</option>
-                <option value="false">Revogadas</option>
+                <option value="">All</option>
+                <option value="true">Active</option>
+                <option value="false">Revoked</option>
               </select>
             </div>
-            <button class="secondary-button filter-button" type="submit">Filtrar</button>
-            <button class="text-button" id="clear-license-filters" type="button">Limpar</button>
+            <button class="secondary-button filter-button" type="submit">Filter</button>
+            <button class="text-button" id="clear-license-filters" type="button">Clear</button>
           </form>
 
           <article class="panel">
@@ -207,18 +207,18 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Produto</th>
-                    <th>Colaborador</th>
-                    <th>Atribuída em</th>
-                    <th>Situação</th>
-                    <th>Revogação</th>
-                    <th><span class="sr-only">Ações</span></th>
+                    <th>Product</th>
+                    <th>Employee</th>
+                    <th>Assigned at</th>
+                    <th>Status</th>
+                    <th>Revocation</th>
+                    <th><span class="sr-only">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody id="licenses-table"></tbody>
               </table>
             </div>
-            <div id="licenses-empty" class="empty-state" hidden>Nenhuma atribuição encontrada.</div>
+            <div id="licenses-empty" class="empty-state" hidden>No assignments found.</div>
           </article>
         </section>
       </main>
@@ -228,23 +228,23 @@
       <form id="product-form" class="dialog-form">
         <div class="dialog-heading">
           <div>
-            <p class="eyebrow">PRODUTO</p>
-            <h2 id="product-form-title">Novo produto</h2>
+            <p class="eyebrow">PRODUCT</p>
+            <h2 id="product-form-title">New product</h2>
           </div>
-          <button class="icon-button close-dialog" type="button" aria-label="Fechar">×</button>
+          <button class="icon-button close-dialog" type="button" aria-label="Close">×</button>
         </div>
         <input id="product-id" type="hidden" />
         <div class="field">
-          <label for="product-name">Nome</label>
+          <label for="product-name">Name</label>
           <input id="product-name" required autocomplete="off" />
         </div>
         <div class="field">
-          <label for="product-vendor">Fornecedor</label>
+          <label for="product-vendor">Vendor</label>
           <input id="product-vendor" required autocomplete="organization" />
         </div>
         <div class="form-columns">
           <div class="field">
-            <label for="product-cost">Custo mensal por licença</label>
+            <label for="product-cost">Monthly cost per license</label>
             <div class="money-input">
               <span aria-hidden="true">R$</span>
               <input
@@ -255,16 +255,16 @@
                 placeholder="189,00"
               />
             </div>
-            <small>Informe o valor em reais, com até duas casas decimais.</small>
+            <small>Enter the amount in Brazilian reais with up to two decimal places.</small>
           </div>
           <div class="field">
-            <label for="product-seats">Total de licenças</label>
+            <label for="product-seats">Total seats</label>
             <input id="product-seats" type="number" required min="1" step="1" />
           </div>
         </div>
         <div class="dialog-actions">
-          <button class="secondary-button close-dialog" type="button">Cancelar</button>
-          <button class="primary-button" type="submit">Salvar produto</button>
+          <button class="secondary-button close-dialog" type="button">Cancel</button>
+          <button class="primary-button" type="submit">Save product</button>
         </div>
       </form>
     </dialog>
@@ -273,13 +273,13 @@
       <form id="employee-form" class="dialog-form">
         <div class="dialog-heading">
           <div>
-            <p class="eyebrow">COLABORADOR</p>
-            <h2>Novo colaborador</h2>
+            <p class="eyebrow">EMPLOYEE</p>
+            <h2>New employee</h2>
           </div>
-          <button class="icon-button close-dialog" type="button" aria-label="Fechar">×</button>
+          <button class="icon-button close-dialog" type="button" aria-label="Close">×</button>
         </div>
         <div class="field">
-          <label for="employee-name">Nome</label>
+          <label for="employee-name">Name</label>
           <input id="employee-name" required autocomplete="name" />
         </div>
         <div class="field">
@@ -287,12 +287,12 @@
           <input id="employee-email" type="email" required autocomplete="email" />
         </div>
         <div class="field">
-          <label for="employee-department">Departamento</label>
+          <label for="employee-department">Department</label>
           <input id="employee-department" required autocomplete="organization-title" />
         </div>
         <div class="dialog-actions">
-          <button class="secondary-button close-dialog" type="button">Cancelar</button>
-          <button class="primary-button" type="submit">Cadastrar colaborador</button>
+          <button class="secondary-button close-dialog" type="button">Cancel</button>
+          <button class="primary-button" type="submit">Create employee</button>
         </div>
       </form>
     </dialog>
@@ -301,23 +301,23 @@
       <form id="license-form" class="dialog-form">
         <div class="dialog-heading">
           <div>
-            <p class="eyebrow">ATRIBUIÇÃO</p>
-            <h2>Atribuir licença</h2>
+            <p class="eyebrow">ASSIGNMENT</p>
+            <h2>Assign license</h2>
           </div>
-          <button class="icon-button close-dialog" type="button" aria-label="Fechar">×</button>
+          <button class="icon-button close-dialog" type="button" aria-label="Close">×</button>
         </div>
         <div class="field">
-          <label for="license-product">Produto</label>
+          <label for="license-product">Product</label>
           <select id="license-product" required></select>
-          <small>Produtos com vagas aparecem primeiro.</small>
+          <small>Products with available seats appear first.</small>
         </div>
         <div class="field">
-          <label for="license-employee">Colaborador ativo</label>
+          <label for="license-employee">Active employee</label>
           <select id="license-employee" required></select>
         </div>
         <div class="dialog-actions">
-          <button class="secondary-button close-dialog" type="button">Cancelar</button>
-          <button class="primary-button" type="submit">Confirmar atribuição</button>
+          <button class="secondary-button close-dialog" type="button">Cancel</button>
+          <button class="primary-button" type="submit">Confirm assignment</button>
         </div>
       </form>
     </dialog>

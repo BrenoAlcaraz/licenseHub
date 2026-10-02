@@ -1,60 +1,56 @@
-# Specs — LicenseHub
+# LicenseHub specs
 
-Esta pasta é a **fonte da verdade** do comportamento da API. O projeto segue
-Spec Driven Development: nada é implementado sem estar descrito aqui antes.
+This directory is the **source of truth** for API behavior. The project follows spec-driven development: nothing is implemented before it is documented here.
 
-## Fluxo de trabalho
+## Workflow
 
-1. **Spec** — o comportamento é descrito neste diretório e revisado.
-2. **Red** — cada critério de aceite marcado como `[unit]` vira um `it()` no
-   `*.service.spec.ts` do módulo. O teste é escrito antes do código e falha.
-3. **Green** — entidade, migration, DTOs, service e controller são
-   implementados até os testes passarem.
-4. **Refactor** — limpeza com os testes verdes (`npm run test` + `npm run lint`).
+1. **Spec** — behavior is documented in this directory and reviewed.
+2. **Red** — each acceptance criterion marked `[unit]` becomes an `it()` in the module's `*.service.spec.ts`. The test is written first and fails.
+3. **Green** — the entity, migration, DTOs, service, and controller are implemented until the tests pass.
+4. **Refactor** — clean up while tests remain green (`npm run test` and `npm run lint`).
 
-## Convenção de IDs
+## ID convention
 
-Cada critério de aceite tem um ID `<MÓDULO>-AC<NN>`:
+Each acceptance criterion has an ID in the form `<MODULE>-AC<NN>`:
 
-| Prefixo | Módulo | Arquivo |
+| Prefix | Module | File |
 |---|---|---|
 | `PRD` | Products | [products.spec.md](products.spec.md) |
 | `EMP` | Employees | [employees.spec.md](employees.spec.md) |
 | `LIC` | Licenses | [licenses.spec.md](licenses.spec.md) |
 | `REP` | Reports | [reports.spec.md](reports.spec.md) |
-| `RT` | Alerta em tempo real (WebSocket) | [realtime.spec.md](realtime.spec.md) |
-| `UI` | Dashboard web | [dashboard.spec.md](dashboard.spec.md) |
-| `E2E` | Testes ponta a ponta | [e2e.spec.md](e2e.spec.md) |
+| `RT` | Real-time WebSocket alerts | [realtime.spec.md](realtime.spec.md) |
+| `UI` | Web dashboard | [dashboard.spec.md](dashboard.spec.md) |
+| `E2E` | End-to-end tests | [e2e.spec.md](e2e.spec.md) |
 
-O nome do teste cita o ID do critério e a regra de negócio, por exemplo:
+Test names reference the criterion ID and business rule, for example:
 
 ```ts
 it('LIC-AC05 (RN03) rejects a second active assignment of the same product', ...)
 ```
 
-Assim, um `grep` pelo ID encontra a spec e o teste que a garante.
+Searching for the ID therefore finds both the specification and the test that guarantees it.
 
-## Como o critério é verificado
+## Verification methods
 
-| Marcação | Onde é verificado |
+| Marker | Verification |
 |---|---|
-| `[unit]` | Teste unitário do service (Jest, `EntityManager` mockado) — obrigatório |
-| `[pipe]` | `ValidationPipe` global + decorators do DTO — automatizado no e2e (E2E-02) |
-| `[e2e]` | Teste automatizado com a aplicação e o PostgreSQL reais |
-| `[manual]` | Conferido contra o banco real — os de concorrência e atomicidade estão automatizados no e2e (E2E-03 a E2E-11) |
+| `[unit]` | Service unit test with Jest and a mocked `EntityManager`; required |
+| `[pipe]` | Global `ValidationPipe` and DTO decorators; automated in E2E-02 |
+| `[e2e]` | Automated test using the real application and PostgreSQL |
+| `[manual]` | Checked against the real database; concurrency and atomicity cases are automated in E2E-03 through E2E-11 |
 
-## Formato dos critérios
+## Criterion format
 
+```text
+### XXX-AC01 — short title            [unit] RN0x
+- Given <initial state>
+- When  <action>
+- Then  <observable result: HTTP status, body, database effect>
 ```
-### XXX-AC01 — título curto            [unit] RN0x
-- Dado   <estado inicial>
-- Quando <ação>
-- Então  <resultado observável: status HTTP, corpo, efeito no banco>
-```
 
-## Regras transversais
+## Cross-cutting rules
 
-- IDs são UUID; um `:id` que não é UUID válido retorna **400** (`ParseUUIDPipe`).
-- Dinheiro sempre em **centavos inteiros**; datas em UTC (ISO 8601).
-- Mensagens de erro em inglês, no corpo padrão do Nest:
-  `{ "statusCode": 409, "message": "...", "error": "Conflict" }`.
+- IDs are UUIDs; a non-UUID `:id` returns **400** through `ParseUUIDPipe`.
+- Money is always represented as **integer cents**; dates use UTC and ISO 8601.
+- Error messages are in English and use Nest's standard body: `{ "statusCode": 409, "message": "...", "error": "Conflict" }`.

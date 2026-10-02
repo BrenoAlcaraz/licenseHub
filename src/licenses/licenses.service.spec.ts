@@ -31,7 +31,7 @@ function buildEmployee(status = EmployeeStatus.ACTIVE): Employee {
     id: EMPLOYEE_ID,
     name: 'Ana Souza',
     email: 'ana.souza@empresa.com',
-    department: 'TI',
+    department: 'IT',
     status,
   });
 }

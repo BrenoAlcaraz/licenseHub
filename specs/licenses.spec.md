@@ -1,158 +1,89 @@
 # Spec — Licenses
 
-Atribuição e revogação de licenças. A tabela de atribuições **é o histórico**:
-nada é apagado, revogar = preencher `revokedAt`.
+License assignment and revocation. The assignment table **is the history**: rows are never deleted; revocation sets `revokedAt`. Applies **RN01**, **RN02**, **RN03**, **RN06**, **RN08**, and **RN10**.
 
-Regras aplicadas: **RN01**, **RN02**, **RN03**, **RN06**, **RN08**, **RN10**.
+## Model
 
-## Modelo — LicenseAssignment
-
-| Campo | Tipo | Regras |
+| Field | Type | Rules |
 |---|---|---|
-| id | uuid | PK |
-| product | ManyToOne → Product | obrigatório |
-| employee | ManyToOne → Employee | obrigatório |
-| assignedAt | timestamptz | automático |
-| revokedAt | timestamptz \| null | preenchido na revogação |
-| revokeReason | enum `RevokeReason` \| null | `MANUAL` \| `OFFBOARDING` |
+| id | uuid | Primary key |
+| product | ManyToOne → Product | Required |
+| employee | ManyToOne → Employee | Required |
+| assignedAt | timestamptz | Automatic |
+| revokedAt | timestamptz \| null | Set on revocation |
+| revokeReason | `RevokeReason` \| null | `MANUAL` or `OFFBOARDING` |
 
-Uma atribuição está **ativa** quando `revokedAt IS NULL`.
-
-**Reforço da RN03 no banco:** índice único parcial
-`UNIQUE (product_id, employee_id) WHERE revoked_at IS NULL`. O service continua
-checando antes (para devolver uma mensagem clara), mas o índice garante a regra
-mesmo com duas requisições simultâneas. Se o índice for violado, a API responde
-409 com a mesma mensagem da LIC-AC05.
+An assignment is active when `revokedAt IS NULL`. RN03 is also enforced by the partial unique index `UNIQUE (product_id, employee_id) WHERE revoked_at IS NULL`. The service checks first for a clear message; a database violation is converted to the same 409 response.
 
 ## Endpoints
 
-| Método | Rota | Corpo / Query | Sucesso | Erros |
+| Method | Route | Body/query | Success | Errors |
 |---|---|---|---|---|
 | POST | `/licenses` | `AssignLicenseDto` | 201 `LicenseResponse` | 400, 404, 409 |
-| GET | `/licenses` | `?productId=` `?employeeId=` `?active=true\|false` (opcionais, combináveis) | 200 `LicenseResponse[]` | 400 |
+| GET | `/licenses` | Optional combinable `productId`, `employeeId`, and `active` filters | 200 `LicenseResponse[]` | 400 |
 | POST | `/licenses/:id/revoke` | — | 200 `LicenseResponse` | 400, 404, 409 |
 
-`AssignLicenseDto`
-```json
-{ "productId": "…", "employeeId": "…" }
-```
+## Assignment check order
 
-`LicenseResponse`
-```json
-{
-  "id": "…",
-  "productId": "…", "productName": "Slack Pro",
-  "employeeId": "…", "employeeName": "Ana Souza",
-  "assignedAt": "2026-10-02T12:00:00.000Z",
-  "revokedAt": null, "revokeReason": null
-}
-```
+All checks run in one transaction and stop at the first error:
 
-## Ordem das verificações ao atribuir
+1. Product exists; otherwise 404. Read with `FOR UPDATE`.
+2. Employee exists; otherwise 404. Read with `FOR UPDATE`.
+3. Employee is `ACTIVE`; otherwise 409.
+4. No active assignment exists for this product/employee pair; otherwise 409.
+5. The product has an available seat; otherwise 409.
 
-Tudo roda dentro de **uma transação**. O service checa nesta ordem e para no
-primeiro erro (guard clauses):
+## Acceptance criteria
 
-1. produto existe → senão **404** (RN10) — lido com `FOR UPDATE` (LIC-AC14)
-2. colaborador existe → senão **404** (RN10) — lido com `FOR UPDATE` (LIC-AC14, EMP-AC15)
-3. colaborador está `ACTIVE` → senão **409** (RN02 / RN08)
-4. colaborador não tem atribuição ativa desse produto → senão **409** (RN03)
-5. produto tem vaga (`seatsInUse < totalSeats`) → senão **409** (RN01)
+### LIC-AC01 — assigns a license [unit]
+- Given an ACTIVE employee without the product and a product at 4/5 usage
+- When `POST /licenses` is requested
+- Then the response is 201 with `assignedAt`, `revokedAt = null`, and `revokeReason = null`
 
-## Mensagens de erro
+### LIC-AC02 — missing product [unit] RN10
+- A nonexistent `productId` returns 404 with `Product '<id>' not found`
 
-| Situação | Status | Mensagem |
-|---|---|---|
-| Produto inexistente | 404 | `Product '<id>' not found` |
-| Colaborador inexistente | 404 | `Employee '<id>' not found` |
-| Atribuição inexistente | 404 | `License assignment '<id>' not found` |
-| Colaborador não ativo | 409 | `Employee 'Fábio Lima' is ON_LEAVE; only ACTIVE employees can receive licenses` |
-| Licença ativa repetida | 409 | `Employee 'Ana Souza' already has an active 'Slack Pro' license` |
-| Sem vagas | 409 | `Product 'Slack Pro' has no available seats (5/5 in use)` |
-| Já revogada | 409 | `License assignment '<id>' is already revoked` |
+### LIC-AC03 — missing employee [unit] RN10
+- A nonexistent `employeeId` returns 404 with `Employee '<id>' not found`
 
-## Critérios de aceite
+### LIC-AC04 — employee is not active [unit] RN02 RN08
+- An `ON_LEAVE` or `OFFBOARDED` employee receives 409 with `Employee '<name>' is <STATUS>; only ACTIVE employees can receive licenses`
 
-### LIC-AC01 — atribui licença                               [unit]
-- Dado   "Slack Pro" com 4/5 vagas em uso e "Ana Souza" `ACTIVE` sem licença dele
-- Quando faço `POST /licenses`
-- Então  recebo 201 com `assignedAt` preenchido, `revokedAt = null` e `revokeReason = null`
+### LIC-AC05 — duplicate active license [unit] RN03
+- A repeated active product/employee pair receives 409 with `Employee 'Ana Souza' already has an active 'Slack Pro' license`
 
-### LIC-AC02 — produto inexistente                           [unit] RN10
-- Quando faço `POST /licenses` com `productId` que não existe
-- Então  recebo 404 com `Product '<id>' not found`
+### LIC-AC13 — concurrent duplicate blocked by the index [unit] RN03
+- If two simultaneous requests pass the service check, the partial unique index rejects the second write
+- The API returns the LIC-AC05 409 message, not 500
 
-### LIC-AC03 — colaborador inexistente                       [unit] RN10
-- Quando faço `POST /licenses` com `employeeId` que não existe
-- Então  recebo 404 com `Employee '<id>' not found`
+### LIC-AC06 — reassignment after revocation [unit] RN03
+- A previously revoked pair can be assigned again when a seat is available
 
-### LIC-AC04 — colaborador não ativo                         [unit] RN02 RN08
-- Dado   um colaborador `ON_LEAVE` (e, em outro caso, `OFFBOARDED`)
-- Quando faço `POST /licenses` para ele
-- Então  recebo 409 com `Employee '<name>' is <STATUS>; only ACTIVE employees can receive licenses`
+### LIC-AC07 — no available seats [unit] RN01
+- A product at 5/5 returns 409 with `Product 'Slack Pro' has no available seats (5/5 in use)` and creates nothing
 
-### LIC-AC05 — licença ativa repetida                        [unit] RN03
-- Dado   "Ana Souza" com atribuição ativa de "Slack Pro"
-- Quando faço `POST /licenses` com o mesmo par produto/colaborador
-- Então  recebo 409 com `Employee 'Ana Souza' already has an active 'Slack Pro' license`
+### LIC-AC14 — concurrent contention for the final seat [unit] [manual] RN01
+- Given one free seat and N different ACTIVE employees
+- When all N assignments arrive together
+- Then exactly one receives 201, the rest receive 409, and usage never exceeds capacity
+- The transaction locks the product row and then the employee row before reading mutable state
 
-### LIC-AC13 — duplicata concorrente barrada pelo índice     [unit] RN03
-- Dado   duas requisições simultâneas atribuindo o mesmo produto ao mesmo colaborador
-- Quando as duas passam pela checagem do service e a segunda grava no banco
-- Então  o índice único parcial rejeita a segunda e a API responde 409 com a
-  mesma mensagem da LIC-AC05 (não 500)
+### LIC-AC15 — concurrent revocation [unit] [manual] RN06
+- Two concurrent revocations of one active assignment produce one 200 and one 409
+- `revokedAt` is not overwritten because the assignment is read with `FOR UPDATE`
 
-### LIC-AC06 — pode receber de novo depois de revogada       [unit] RN03
-- Dado   "Ana Souza" com uma atribuição **revogada** de "Slack Pro" e vaga disponível
-- Quando faço `POST /licenses` com o mesmo par
-- Então  recebo 201 (só atribuições **ativas** contam para a RN03)
+### LIC-AC08 — validates input [pipe]
+- Missing IDs, non-UUID IDs, or extra fields return 400
 
-### LIC-AC07 — produto sem vagas                             [unit] RN01
-- Dado   "Slack Pro" com 5/5 vagas em uso
-- Quando faço `POST /licenses` para um colaborador `ACTIVE` sem essa licença
-- Então  recebo 409 com `Product 'Slack Pro' has no available seats (5/5 in use)`
-  e nenhuma atribuição é criada
+### LIC-AC09 — lists with filters [unit]
+- Filters may be combined; `active=true` returns active assignments and `active=false` returns revoked assignments
+- No filters return all assignments; an invalid `active` value returns 400
 
-### LIC-AC14 — última vaga disputada ao mesmo tempo          [unit] [manual] RN01
-- Dado   um produto com 1 vaga livre e N colaboradores `ACTIVE` diferentes
-- Quando os N fazem `POST /licenses` para esse produto ao mesmo tempo
-- Então  exatamente 1 recebe 201 e os demais recebem 409 (sem vagas);
-  `seatsInUse` nunca passa de `totalSeats`
-- Como   a atribuição roda numa transação que **lê já travando** a linha do
-  produto e depois a do colaborador (`SELECT ... FOR UPDATE`, lock pessimista).
-  Atribuições do mesmo produto são processadas uma de cada vez, e cada uma lê
-  `totalSeats`/`status` atualizados (nada de dado lido antes do lock)
+### LIC-AC10 — revokes manually [unit]
+- Revoking an active assignment returns 200 with `revokedAt` set and `revokeReason = MANUAL`; the seat becomes available
 
-### LIC-AC15 — revogação concorrente da mesma atribuição      [unit] [manual] RN06
-- Dado   uma atribuição ativa
-- Quando duas requisições `POST /licenses/:id/revoke` chegam ao mesmo tempo
-- Então  uma recebe 200 e a outra 409 (`is already revoked`); `revokedAt`
-  não é sobrescrito
-- Como   a revogação roda numa transação que lê a atribuição com `FOR UPDATE`
+### LIC-AC11 — cannot revoke twice [unit] RN06
+- A second revocation returns 409 with `License assignment '<id>' is already revoked` and preserves the original values
 
-### LIC-AC08 — valida a entrada                              [pipe]
-- Quando faço `POST /licenses` sem `productId`, com id que não é UUID ou com campo extra
-- Então  recebo 400
-
-### LIC-AC09 — lista com filtros                             [unit]
-- Dado   atribuições ativas e revogadas de vários produtos e colaboradores
-- Quando faço `GET /licenses?productId=<slack>&active=true`
-- Então  recebo só as atribuições ativas do Slack Pro
-- E      `?active=false` retorna só as revogadas; sem filtros, retorna todas
-- E      `?active=` com valor diferente de `true`/`false` retorna 400 [pipe]
-
-### LIC-AC10 — revoga manualmente                            [unit]
-- Dado   uma atribuição ativa
-- Quando faço `POST /licenses/:id/revoke`
-- Então  recebo 200 com `revokedAt` preenchido e `revokeReason = MANUAL`
-- E      a vaga volta a ficar disponível no produto
-
-### LIC-AC11 — não revoga duas vezes                         [unit] RN06
-- Dado   uma atribuição já revogada
-- Quando faço `POST /licenses/:id/revoke`
-- Então  recebo 409 com `License assignment '<id>' is already revoked`
-  e `revokedAt`/`revokeReason` originais são mantidos
-
-### LIC-AC12 — atribuição inexistente                        [unit] RN10
-- Quando faço `POST /licenses/:id/revoke` com id que não existe
-- Então  recebo 404 com `License assignment '<id>' not found`
+### LIC-AC12 — missing assignment [unit] RN10
+- Revoking a nonexistent assignment returns 404 with `License assignment '<id>' not found`

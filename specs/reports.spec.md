@@ -1,127 +1,79 @@
 # Spec — Reports
 
-Relatório de custo mensal e desperdício (licenças pagas e não usadas).
-Somente leitura; nenhuma regra de negócio altera dados aqui.
+Monthly cost and waste report for paid but unused licenses. This module is read-only and does not change business data.
 
 ## Endpoint
 
-| Método | Rota | Sucesso |
+| Method | Route | Success |
 |---|---|---|
 | GET | `/reports/costs` | 200 `CostReport` |
 
-`CostReport`
 ```json
 {
   "totalMonthlyCostCents": 326000,
-  "byDepartment": [
-    { "department": "TI", "activeLicenses": 11, "monthlyCostCents": 105100 }
-  ],
-  "idleSeats": [
-    { "productId": "…", "productName": "Microsoft 365 E3", "idleSeats": 3, "wastedMonthlyCostCents": 56700 }
-  ],
+  "byDepartment": [{ "department": "IT", "activeLicenses": 11, "monthlyCostCents": 105100 }],
+  "idleSeats": [{ "productId": "…", "productName": "Microsoft 365 E3", "idleSeats": 3, "wastedMonthlyCostCents": 56700 }],
   "potentialMonthlySavingsCents": 127700
 }
 ```
 
-## Fórmulas
+## Formulas
 
-| Campo | Cálculo |
+| Field | Calculation |
 |---|---|
-| `totalMonthlyCostCents` | Σ `totalSeats × monthlyCostCents` de todos os produtos (o que a empresa paga) |
-| `byDepartment[]` | por departamento: nº de atribuições **ativas** e Σ `monthlyCostCents` delas |
-| `idleSeats[]` | produtos com `totalSeats − seatsInUse > 0`; `wastedMonthlyCostCents = idleSeats × monthlyCostCents` |
-| `potentialMonthlySavingsCents` | Σ `wastedMonthlyCostCents` |
+| `totalMonthlyCostCents` | Sum of `totalSeats × monthlyCostCents` for every product; what the company pays |
+| `byDepartment[]` | Per department, the number of **active** assignments and the sum of their `monthlyCostCents` |
+| `idleSeats[]` | Products where `totalSeats − seatsInUse > 0`; `wastedMonthlyCostCents = idleSeats × monthlyCostCents` |
+| `potentialMonthlySavingsCents` | Sum of every `wastedMonthlyCostCents` |
 
-Ordenação: `byDepartment` por `monthlyCostCents` decrescente; `idleSeats` por
-`wastedMonthlyCostCents` decrescente (empate: ordem alfabética). Departamentos sem
-licenças ativas não aparecem.
+`byDepartment` is sorted by descending `monthlyCostCents`. `idleSeats` is sorted by descending `wastedMonthlyCostCents`, with product name as the tie-breaker. Departments without active licenses are omitted.
 
-## Como é calculado
+## Calculation design
 
-- O **banco agrega** (`COUNT`/`SUM`/`GROUP BY`) em duas consultas: vagas em uso por
-  produto e custo das atribuições ativas por departamento.
-- O **service deriva** o resto em TypeScript: total, vagas ociosas, desperdício,
-  economia e ordenação.
-- As duas consultas rodam numa transação `REPEATABLE READ` (uma "foto" única do
-  banco), então `totalMonthlyCostCents − Σ byDepartment = potentialMonthlySavingsCents`
-  sempre fecha.
+- The **database aggregates** with `COUNT`, `SUM`, and `GROUP BY` in two queries: usage per product and active-assignment cost per department.
+- The **service derives** totals, idle seats, waste, savings, and ordering in TypeScript.
+- Both queries run in a `REPEATABLE READ` transaction against one database snapshot, so `totalMonthlyCostCents − Σ byDepartment = potentialMonthlySavingsCents` always balances.
 
-## Dados do seed (base para conferir os números)
+## Seed data
 
-**Produtos**
-
-| Produto | Vendor | Custo/mês | Seats | Em uso | Ociosas |
-|---|---|---|---|---|---|
+| Product | Vendor | Monthly cost | Seats | In use | Idle |
+|---|---|---:|---:|---:|---:|
 | Microsoft 365 E3 | Microsoft | 18900 | 10 | 7 | 3 |
-| Slack Pro | Slack | 4500 | 5 | 5 | 0 (lotado) |
+| Slack Pro | Slack | 4500 | 5 | 5 | 0 |
 | Adobe Creative Cloud | Adobe | 27500 | 3 | 1 | 2 |
 | Jira Software | Atlassian | 4000 | 8 | 4 | 4 |
 
-**Colaboradores** (10, em 3 departamentos)
+The seed contains 10 employees in three departments: IT, HR, and Finance. There are 17 active assignments. Fábio is `ON_LEAVE` and retains an M365 license under RN08; João Pereira has no license and can receive a new assignment.
 
-| Departamento | Colaboradores |
-|---|---|
-| TI | Ana Souza, Bruno Lima, Carla Mendes, Diego Rocha |
-| RH | Elisa Martins, Fábio Lima (`ON_LEAVE`), Gabriela Nunes |
-| Financeiro | Hugo Alves, Isabela Costa, João Pereira |
+## Acceptance criteria
 
-**Atribuições ativas** (17)
+### REP-AC01 — total cost [unit] [manual]
+- Given the seed products
+- When `GET /reports/costs` is requested
+- Then `totalMonthlyCostCents = 326000`
 
-| Produto | Colaboradores |
-|---|---|
-| Microsoft 365 E3 | Ana, Bruno, Carla, Diego, Elisa, Fábio, Hugo |
-| Slack Pro | Ana, Bruno, Carla, Gabriela, Isabela |
-| Adobe Creative Cloud | Elisa |
-| Jira Software | Ana, Bruno, Carla, Diego |
+### REP-AC02 — cost by department [unit] [manual]
+- Given the active seed assignments
+- Then `byDepartment` contains IT: 11 licenses/105100 cents; HR: 4/69800; Finance: 2/23400
 
-Fábio está `ON_LEAVE` e mantém a licença M365 (RN08). João Pereira não tem
-nenhuma licença (bom para testar uma atribuição nova).
+### REP-AC03 — idle seats [unit] [manual]
+- Then `idleSeats` contains Microsoft 365 E3: 3/56700; Adobe Creative Cloud: 2/55000; Jira Software: 4/16000
+- And full Slack Pro is omitted
 
-## Critérios de aceite
+### REP-AC04 — potential savings [unit] [manual]
+- Then `potentialMonthlySavingsCents = 127700`
+- And it balances as `326000 − 198300 = 127700`
 
-### REP-AC01 — custo total                                   [unit] [manual]
-- Dado   os produtos do seed
-- Quando faço `GET /reports/costs`
-- Então  `totalMonthlyCostCents = 326000`
-  (189000 + 22500 + 82500 + 32000)
+### REP-AC05 — revoked assignments do not count [manual]
+- Given a revoked assignment
+- Then it is excluded from `byDepartment`, and its seat counts as idle
+- This is manual because `revoked_at IS NULL` is inside the aggregation SQL and cannot be proven with a mocked database; it is checked against PostgreSQL in stage 9
 
-### REP-AC02 — custo por departamento                        [unit] [manual]
-- Dado   as atribuições ativas do seed
-- Então  `byDepartment` é:
+### REP-AC06 — empty database [unit]
+- Given no products
+- Then the response is `{ "totalMonthlyCostCents": 0, "byDepartment": [], "idleSeats": [], "potentialMonthlySavingsCents": 0 }`
 
-| department | activeLicenses | monthlyCostCents |
-|---|---|---|
-| TI | 11 | 105100 |
-| RH | 4 | 69800 |
-| Financeiro | 2 | 23400 |
-
-### REP-AC03 — vagas ociosas                                 [unit] [manual]
-- Então  `idleSeats` é (Slack Pro não aparece, está lotado):
-
-| productName | idleSeats | wastedMonthlyCostCents |
-|---|---|---|
-| Microsoft 365 E3 | 3 | 56700 |
-| Adobe Creative Cloud | 2 | 55000 |
-| Jira Software | 4 | 16000 |
-
-### REP-AC04 — economia potencial                            [unit] [manual]
-- Então  `potentialMonthlySavingsCents = 127700`
-- E      confere: `totalMonthlyCostCents − Σ byDepartment.monthlyCostCents`
-  = 326000 − 198300 = 127700
-
-### REP-AC05 — atribuições revogadas não contam              [manual]
-- Dado   uma atribuição revogada
-- Então  ela não entra em `byDepartment` e a vaga dela conta como ociosa
-- Por que [manual]: o filtro `revoked_at IS NULL` está dentro do SQL de agregação;
-  um teste com o banco mockado não consegue provar isso. Conferido contra o banco
-  com o seed (etapa 9)
-
-### REP-AC06 — banco vazio                                   [unit]
-- Dado   nenhum produto cadastrado
-- Então  recebo `{ "totalMonthlyCostCents": 0, "byDepartment": [], "idleSeats": [], "potentialMonthlySavingsCents": 0 }`
-
-### REP-AC07 — reflete o desligamento                        [manual]
-- Dado   o seed
-- Quando desligo "Ana Souza" (`POST /employees/:id/offboard` → `monthlySavingsCents = 27400`)
-- Então  `potentialMonthlySavingsCents` passa a ser 127700 + 27400 = **155100**
-  e TI cai para 8 licenças / 77700
+### REP-AC07 — reflects offboarding [manual]
+- Given the seed data
+- When Ana Souza is offboarded and `monthlySavingsCents = 27400`
+- Then `potentialMonthlySavingsCents` becomes **155100**, while IT drops to 8 licenses and 77700 cents

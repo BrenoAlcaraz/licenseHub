@@ -173,7 +173,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetch(path, init);
   } catch {
     throw new ApiError(null, [
-      'Não foi possível conectar à aplicação. Verifique a conexão e tente novamente.',
+      'Could not connect to the application. Check the connection and try again.',
     ]);
   }
 
@@ -183,7 +183,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     body = text ? (JSON.parse(text) as unknown) : null;
   } catch {
     throw new ApiError(response.status, [
-      'A aplicação retornou uma resposta que não pôde ser lida. Tente novamente.',
+      'The application returned an unreadable response. Try again.',
     ]);
   }
 
@@ -191,7 +191,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const message =
       typeof body === 'object' && body !== null && 'message' in body
         ? body.message
-        : 'Erro inesperado.';
+        : 'Unexpected error.';
     const messages = Array.isArray(message)
       ? message.map(String)
       : [String(message)];
@@ -222,7 +222,7 @@ function showFeedback(kind: 'success' | 'error', message: string): void {
   text.textContent = message;
   const close = document.createElement('button');
   close.type = 'button';
-  close.setAttribute('aria-label', 'Fechar mensagem');
+  close.setAttribute('aria-label', 'Close message');
   close.textContent = '×';
   close.addEventListener('click', () => container.replaceChildren());
   notice.append(text, close);
@@ -232,11 +232,11 @@ function showFeedback(kind: 'success' | 'error', message: string): void {
 
 function showError(error: unknown): void {
   if (error instanceof ApiError) {
-    const prefix = error.status === null ? '' : `Erro ${error.status}: `;
+    const prefix = error.status === null ? '' : `Error ${error.status}: `;
     showFeedback('error', `${prefix}${error.messages.join('\n')}`);
     return;
   }
-  showFeedback('error', 'Ocorreu um erro inesperado. Tente novamente.');
+  showFeedback('error', 'An unexpected error occurred. Try again.');
 }
 
 function employeeFilterPath(): string {
@@ -309,14 +309,14 @@ function renderOverview(): void {
     0,
   );
   element('metrics').innerHTML = [
-    ['Custo mensal total', formatMoney(state.report.totalMonthlyCostCents), ''],
+    ['Total monthly cost', formatMoney(state.report.totalMonthlyCostCents), ''],
     [
-      'Economia mensal potencial',
+      'Potential monthly savings',
       formatMoney(state.report.potentialMonthlySavingsCents),
       'savings',
     ],
-    ['Licenças ativas', String(activeLicenses), ''],
-    ['Vagas ociosas', String(idleSeats), 'savings'],
+    ['Active licenses', String(activeLicenses), ''],
+    ['Idle seats', String(idleSeats), 'savings'],
   ]
     .map(
       ([label, value, className]) => `
@@ -340,14 +340,14 @@ function renderOverview(): void {
               <strong>${escapeHtml(item.department)}</strong>
               <span>${formatMoney(item.monthlyCostCents)}</span>
             </div>
-            <div class="bar-track" aria-label="${item.activeLicenses} licenças ativas">
+            <div class="bar-track" aria-label="${item.activeLicenses} active licenses">
               <div class="bar-fill" style="width: ${(item.monthlyCostCents / maxDepartmentCost) * 100}%"></div>
             </div>
-            <span class="row-detail">${item.activeLicenses} ${item.activeLicenses === 1 ? 'licença ativa' : 'licenças ativas'}</span>
+            <span class="row-detail">${item.activeLicenses} ${item.activeLicenses === 1 ? 'active license' : 'active licenses'}</span>
           </div>`,
         )
         .join('')}</div>`
-    : '<div class="empty-state">Nenhum custo por departamento.</div>';
+    : '<div class="empty-state">No costs by department.</div>';
 
   element('idle-seats').innerHTML = state.report.idleSeats.length
     ? `<div class="idle-list">${state.report.idleSeats
@@ -358,11 +358,11 @@ function renderOverview(): void {
               <strong>${escapeHtml(item.productName)}</strong>
               <span>${formatMoney(item.wastedMonthlyCostCents)}</span>
             </div>
-            <span class="row-detail">${item.idleSeats} ${item.idleSeats === 1 ? 'vaga ociosa' : 'vagas ociosas'} por mês</span>
+            <span class="row-detail">${item.idleSeats} ${item.idleSeats === 1 ? 'idle seat' : 'idle seats'} per month</span>
           </div>`,
         )
         .join('')}</div>`
-    : '<div class="empty-state">Nenhuma vaga ociosa.</div>';
+    : '<div class="empty-state">No idle seats.</div>';
 }
 
 function renderProducts(): void {
@@ -382,12 +382,12 @@ function renderProducts(): void {
           <td>${formatMoney(product.monthlyCostCents)}</td>
           <td>
             <div class="occupancy ${high ? 'high' : ''}">
-              <span>${product.seatsInUse} de ${product.totalSeats} em uso${high ? ' · limite alto' : ''}</span>
+              <span>${product.seatsInUse} of ${product.totalSeats} in use${high ? ' · high usage' : ''}</span>
               <div class="bar-track"><div class="bar-fill ${high ? 'warning' : ''}" style="width: ${percentage}%"></div></div>
             </div>
           </td>
           <td><strong>${product.seatsAvailable}</strong></td>
-          <td><button class="table-action" data-action="edit-product" data-id="${product.id}" type="button">Editar</button></td>
+          <td><button class="table-action" data-action="edit-product" data-id="${product.id}" type="button">Edit</button></td>
         </tr>`;
     })
     .join('');
@@ -417,7 +417,7 @@ function renderEmployees(): void {
           <td>${escapeHtml(employee.department)}</td>
           <td>${statusBadge(employee.status)}</td>
           <td>${formatDate(employee.offboardedAt)}</td>
-          <td><button class="table-action" data-action="view-employee" data-id="${employee.id}" type="button">Ver detalhes</button></td>
+          <td><button class="table-action" data-action="view-employee" data-id="${employee.id}" type="button">View details</button></td>
         </tr>`,
     )
     .join('');
@@ -433,13 +433,13 @@ function renderLicenses(): void {
           <td><span class="cell-title">${escapeHtml(license.productName)}</span></td>
           <td>${escapeHtml(license.employeeName)}</td>
           <td>${formatDate(license.assignedAt)}</td>
-          <td>${license.revokedAt ? '<span class="badge revoked">REVOGADA</span>' : '<span class="badge active">ATIVA</span>'}</td>
+          <td>${license.revokedAt ? '<span class="badge revoked">REVOKED</span>' : '<span class="badge active">ACTIVE</span>'}</td>
           <td>
             <span class="cell-title">${formatDate(license.revokedAt)}</span>
             ${license.revokeReason ? `<span class="cell-subtitle">${license.revokeReason}</span>` : ''}
           </td>
           <td>
-            ${license.revokedAt ? '' : `<button class="table-action" data-action="revoke-license" data-id="${license.id}" type="button">Revogar</button>`}
+            ${license.revokedAt ? '' : `<button class="table-action" data-action="revoke-license" data-id="${license.id}" type="button">Revoke</button>`}
           </td>
         </tr>`,
     )
@@ -485,12 +485,12 @@ function renderSelects(): void {
   );
   replaceOptions(
     element<HTMLSelectElement>('license-product-filter'),
-    'Todos',
+    'All',
     productOptions,
   );
   replaceOptions(
     element<HTMLSelectElement>('license-employee-filter'),
-    'Todos',
+    'All',
     employeeOptions,
   );
 
@@ -501,12 +501,12 @@ function renderSelects(): void {
   const assignProductOptions = optionsHtml(
     sortedProducts,
     (product) => product.id,
-    (product) => `${product.name} · ${product.seatsAvailable} disponíveis`,
+    (product) => `${product.name} · ${product.seatsAvailable} available`,
     (product) => product.seatsAvailable < 1,
   );
   replaceOptions(
     element<HTMLSelectElement>('license-product'),
-    'Selecione um produto',
+    'Select a product',
     assignProductOptions,
   );
 
@@ -522,7 +522,7 @@ function renderSelects(): void {
   );
   replaceOptions(
     element<HTMLSelectElement>('license-employee'),
-    'Selecione um colaborador',
+    'Select an employee',
     assignEmployeeOptions,
   );
 }
@@ -554,8 +554,8 @@ function openProductForm(product?: Product): void {
   form.reset();
   element<HTMLInputElement>('product-id').value = product?.id ?? '';
   element('product-form-title').textContent = product
-    ? 'Editar produto'
-    : 'Novo produto';
+    ? 'Edit product'
+    : 'New product';
   element<HTMLInputElement>('product-name').value = product?.name ?? '';
   element<HTMLInputElement>('product-vendor').value = product?.vendor ?? '';
   element<HTMLInputElement>('product-cost').value =
@@ -573,40 +573,40 @@ async function openEmployeeDetail(employeeId: string): Promise<void> {
           (license) => `
             <div class="license-card">
               <strong>${escapeHtml(license.productName)}</strong>
-              <span class="row-detail">desde ${formatDate(license.assignedAt)}</span>
+              <span class="row-detail">since ${formatDate(license.assignedAt)}</span>
             </div>`,
         )
         .join('')
-    : '<div class="empty-state">Nenhuma licença ativa.</div>';
+    : '<div class="empty-state">No active licenses.</div>';
   const statusAction =
     detail.status === 'ACTIVE'
-      ? `<button class="secondary-button" data-detail-action="status" data-status="ON_LEAVE" type="button">Colocar em férias</button>`
+      ? `<button class="secondary-button" data-detail-action="status" data-status="ON_LEAVE" type="button">Place on leave</button>`
       : detail.status === 'ON_LEAVE'
-        ? `<button class="secondary-button" data-detail-action="status" data-status="ACTIVE" type="button">Reativar</button>`
+        ? `<button class="secondary-button" data-detail-action="status" data-status="ACTIVE" type="button">Reactivate</button>`
         : '';
   const assignAction =
     detail.status === 'ACTIVE'
-      ? '<button class="primary-button" data-detail-action="assign" type="button">Atribuir licença</button>'
+      ? '<button class="primary-button" data-detail-action="assign" type="button">Assign license</button>'
       : '';
   const offboardAction =
     detail.status === 'OFFBOARDED'
       ? ''
-      : '<button class="danger-button" data-detail-action="offboard" type="button">Desligar colaborador</button>';
+      : '<button class="danger-button" data-detail-action="offboard" type="button">Offboard employee</button>';
 
   const container = element('employee-detail');
   container.innerHTML = `
     <div class="detail-content">
       <div class="detail-header">
         <div>
-          <p class="eyebrow">COLABORADOR</p>
+          <p class="eyebrow">EMPLOYEE</p>
           <h2>${escapeHtml(detail.name)}</h2>
           <div class="detail-meta">${escapeHtml(detail.email)} · ${escapeHtml(detail.department)}</div>
         </div>
-        <button class="icon-button" data-detail-action="close" type="button" aria-label="Fechar">×</button>
+        <button class="icon-button" data-detail-action="close" type="button" aria-label="Close">×</button>
       </div>
       <div>${statusBadge(detail.status)}</div>
       <section class="detail-section">
-        <h3>Licenças ativas (${detail.activeLicenses.length})</h3>
+        <h3>Active licenses (${detail.activeLicenses.length})</h3>
         <div class="department-list">${licenses}</div>
       </section>
       <div class="detail-actions">${assignAction}${statusAction}${offboardAction}</div>
@@ -630,8 +630,8 @@ async function updateEmployeeStatus(
     showFeedback(
       'success',
       status === 'ON_LEAVE'
-        ? 'Colaborador colocado em férias. As licenças existentes foram mantidas.'
-        : 'Colaborador reativado com sucesso.',
+        ? 'Employee placed on leave. Existing licenses were retained.'
+        : 'Employee reactivated successfully.',
     );
   });
 }
@@ -642,7 +642,7 @@ async function offboardEmployee(
   employeeName: string,
 ): Promise<void> {
   const confirmed = window.confirm(
-    `Desligar ${employeeName}? Todas as licenças ativas desse colaborador serão revogadas.`,
+    `Offboard ${employeeName}? All active licenses assigned to this employee will be revoked.`,
   );
   if (!confirmed) return;
   await withBusyButton(button, async () => {
@@ -654,17 +654,17 @@ async function offboardEmployee(
     await refreshAll();
     showFeedback(
       'success',
-      `${employeeName} foi desligado. ${result.revokedLicenses} ${result.revokedLicenses === 1 ? 'licença revogada' : 'licenças revogadas'} e ${formatMoney(result.monthlySavingsCents)} em economia mensal.`,
+      `${employeeName} was offboarded. ${result.revokedLicenses} ${result.revokedLicenses === 1 ? 'license revoked' : 'licenses revoked'}, saving ${formatMoney(result.monthlySavingsCents)} per month.`,
     );
   });
 }
 
 function setupNavigation(): void {
   const titles: Record<string, string> = {
-    overview: 'Visão geral',
-    products: 'Produtos',
-    employees: 'Colaboradores',
-    licenses: 'Atribuições',
+    overview: 'Overview',
+    products: 'Products',
+    employees: 'Employees',
+    licenses: 'Assignments',
   };
 
   const navigate = (section: string) => {
@@ -744,7 +744,7 @@ function setupForms(): void {
       const monthlyCostCents = parseCurrencyToCents(costInput.value);
       if (monthlyCostCents === null) {
         costInput.setCustomValidity(
-          'Informe um valor em reais com até duas casas decimais, como 189,00.',
+          'Enter an amount in Brazilian reais with up to two decimal places, such as 189.00.',
         );
         costInput.reportValidity();
         return;
@@ -767,8 +767,8 @@ function setupForms(): void {
         showFeedback(
           'success',
           id
-            ? 'Produto atualizado com sucesso.'
-            : 'Produto criado com sucesso.',
+            ? 'Product updated successfully.'
+            : 'Product created successfully.',
         );
       });
     },
@@ -793,7 +793,7 @@ function setupForms(): void {
         });
         closeDialog(element<HTMLDialogElement>('employee-dialog'));
         await refreshAll();
-        showFeedback('success', 'Colaborador criado como ACTIVE.');
+        showFeedback('success', 'Employee created with ACTIVE status.');
       });
     },
   );
@@ -814,7 +814,7 @@ function setupForms(): void {
         });
         closeDialog(element<HTMLDialogElement>('license-dialog'));
         await refreshAll();
-        showFeedback('success', 'Licença atribuída com sucesso.');
+        showFeedback('success', 'License assigned successfully.');
       });
     },
   );
@@ -899,7 +899,7 @@ function setupTableActions(): void {
     );
     if (!assignment) return;
     const confirmed = window.confirm(
-      `Revogar ${assignment.productName} de ${assignment.employeeName}?`,
+      `Revoke ${assignment.productName} from ${assignment.employeeName}?`,
     );
     if (!confirmed) return;
     void withBusyButton(target, async () => {
@@ -908,7 +908,7 @@ function setupTableActions(): void {
         'POST',
       );
       await refreshAll();
-      showFeedback('success', 'Licença revogada manualmente.');
+      showFeedback('success', 'License revoked manually.');
     });
   });
 
@@ -946,23 +946,23 @@ function setupSocket(): void {
     status.classList.add('connected');
     status.classList.remove('disconnected');
     status.querySelector('span:last-child')!.textContent =
-      'Tempo real conectado';
+      'Real-time connected';
   });
   socket.on('disconnect', () => {
     status.classList.remove('connected');
     status.classList.add('disconnected');
     status.querySelector('span:last-child')!.textContent =
-      'Tempo real desconectado';
+      'Real-time disconnected';
   });
   socket.on('seats.threshold', (payload) => {
     const container = element('socket-alerts');
     const notice = document.createElement('div');
     notice.className = 'notice socket';
     const text = document.createElement('span');
-    text.textContent = `Limite de ocupação: ${payload.productName} está com ${payload.seatsInUse} de ${payload.totalSeats} licenças em uso.`;
+    text.textContent = `Usage threshold: ${payload.productName} has ${payload.seatsInUse} of ${payload.totalSeats} licenses in use.`;
     const close = document.createElement('button');
     close.type = 'button';
-    close.setAttribute('aria-label', 'Fechar alerta');
+    close.setAttribute('aria-label', 'Close alert');
     close.textContent = '×';
     close.addEventListener('click', () => notice.remove());
     notice.append(text, close);
@@ -982,7 +982,7 @@ async function initialize(): Promise<void> {
   } catch (error) {
     showError(error);
     element('overview-loading').textContent =
-      'Não foi possível carregar os dados. Recarregue a página para tentar novamente.';
+      'Could not load the data. Reload the page to try again.';
   }
 }
 

@@ -1,178 +1,104 @@
 # Spec — Employees
 
-Cadastro de colaboradores, mudança de status (férias/afastamento) e
-desligamento com liberação automática das licenças.
+Employee registration, leave status changes, and offboarding with automatic license release. Applies **RN02** indirectly and **RN04**, **RN05**, **RN08**, **RN09**, and **RN10**.
 
-Regras aplicadas: **RN02** (indireta), **RN04**, **RN05**, **RN08**, **RN09**, **RN10**.
+## Model
 
-## Modelo
-
-| Campo | Tipo | Regras |
+| Field | Type | Rules |
 |---|---|---|
-| id | uuid | PK |
-| name | string | obrigatório |
-| email | string | obrigatório, único, formato de e-mail |
-| department | string | obrigatório |
-| status | enum `EmployeeStatus` | `ACTIVE` \| `ON_LEAVE` \| `OFFBOARDED`; padrão `ACTIVE` |
-| offboardedAt | timestamptz \| null | preenchido no desligamento |
-| createdAt / updatedAt | timestamptz | automáticos |
+| id | uuid | Primary key |
+| name | string | Required |
+| email | string | Required, unique, valid email |
+| department | string | Required |
+| status | `EmployeeStatus` | `ACTIVE`, `ON_LEAVE`, or `OFFBOARDED`; defaults to `ACTIVE` |
+| offboardedAt | timestamptz \| null | Set during offboarding |
+| createdAt / updatedAt | timestamptz | Automatic |
 
-### Transições de status
+## Status transitions
 
-```
-ACTIVE  ⇄  ON_LEAVE        via PATCH /employees/:id/status
-ACTIVE   → OFFBOARDED      via POST  /employees/:id/offboard
-ON_LEAVE → OFFBOARDED      via POST  /employees/:id/offboard
-OFFBOARDED → (nada)        estado final
+```text
+ACTIVE  ⇄  ON_LEAVE        through PATCH /employees/:id/status
+ACTIVE   → OFFBOARDED      through POST  /employees/:id/offboard
+ON_LEAVE → OFFBOARDED      through POST  /employees/:id/offboard
+OFFBOARDED → no transition; terminal state
 ```
 
 ## Endpoints
 
-| Método | Rota | Corpo / Query | Sucesso | Erros |
+| Method | Route | Body/query | Success | Errors |
 |---|---|---|---|---|
 | POST | `/employees` | `CreateEmployeeDto` | 201 `EmployeeResponse` | 400, 409 |
-| GET | `/employees` | `?status=` `?department=` (opcionais, combináveis) | 200 `EmployeeResponse[]` | 400 |
+| GET | `/employees` | Optional `status` and `department` filters | 200 `EmployeeResponse[]` | 400 |
 | GET | `/employees/:id` | — | 200 `EmployeeDetailResponse` | 400, 404 |
 | PATCH | `/employees/:id/status` | `UpdateEmployeeStatusDto` | 200 `EmployeeResponse` | 400, 404, 409 |
 | POST | `/employees/:id/offboard` | — | 200 `OffboardResponse` | 400, 404, 409 |
 
-`CreateEmployeeDto`
-```json
-{ "name": "Ana Souza", "email": "ana.souza@empresa.com", "department": "TI" }
-```
+`UpdateEmployeeStatusDto` accepts only `ACTIVE` or `ON_LEAVE`. Employee details add active licenses to the base response. `OffboardResponse` includes the employee ID, final status, revoked-license count, and monthly savings. Savings are the sum of `monthlyCostCents` for revoked assignments.
 
-`UpdateEmployeeStatusDto` — `status` aceita **apenas** `ACTIVE` ou `ON_LEAVE`.
-```json
-{ "status": "ON_LEAVE" }
-```
+## Error messages
 
-`EmployeeResponse`
-```json
-{
-  "id": "…", "name": "Ana Souza", "email": "ana.souza@empresa.com", "department": "TI",
-  "status": "ACTIVE", "offboardedAt": null,
-  "createdAt": "2026-10-02T12:00:00.000Z", "updatedAt": "2026-10-02T12:00:00.000Z"
-}
-```
+| Situation | Status | Message |
+|---|---:|---|
+| Duplicate email | 409 | `Employee with email 'ana.souza@empresa.com' already exists` |
+| Missing employee | 404 | `Employee '<id>' not found` |
+| Already offboarded | 409 | `Employee 'Ana Souza' is already offboarded` |
+| Status change after offboarding | 409 | `Employee 'Ana Souza' is offboarded and cannot change status` |
 
-`EmployeeDetailResponse` = `EmployeeResponse` + licenças **ativas**:
-```json
-{
-  "…": "campos do EmployeeResponse",
-  "activeLicenses": [
-    { "assignmentId": "…", "productId": "…", "productName": "Slack Pro", "assignedAt": "…" }
-  ]
-}
-```
+## Acceptance criteria
 
-`OffboardResponse`
-```json
-{ "employeeId": "…", "status": "OFFBOARDED", "revokedLicenses": 3, "monthlySavingsCents": 27400 }
-```
-`monthlySavingsCents` = soma do `monthlyCostCents` dos produtos das atribuições revogadas.
+### EMP-AC01 — creates an active employee [unit]
+- Valid creation returns 201 with `status = ACTIVE` and `offboardedAt = null`
 
-## Mensagens de erro
+### EMP-AC02 — rejects duplicate email [unit] RN09
+- Creating an existing email returns 409 with the documented message
 
-| Situação | Status | Mensagem |
-|---|---|---|
-| E-mail duplicado | 409 | `Employee with email 'ana.souza@empresa.com' already exists` |
-| Colaborador inexistente | 404 | `Employee '<id>' not found` |
-| Já desligado (offboard) | 409 | `Employee 'Ana Souza' is already offboarded` |
-| Mudar status de desligado | 409 | `Employee 'Ana Souza' is offboarded and cannot change status` |
+### EMP-AC03 — validates input [pipe]
+- Invalid email, missing or unknown fields, and a submitted `status` return 400
 
-## Critérios de aceite
+### EMP-AC04 — lists with filters [unit]
+- `status` and `department` filters can be combined; no filters return all employees
+- A status outside the enum returns 400
 
-### EMP-AC01 — cria colaborador ativo                        [unit]
-- Dado   que não existe colaborador com o e-mail informado
-- Quando faço `POST /employees` com dados válidos
-- Então  recebo 201 com `status = ACTIVE` e `offboardedAt = null`
+### EMP-AC05 — details include active licenses [unit]
+- Given two active and one revoked assignment
+- Then details include only the two active assignments and their `productName`
 
-### EMP-AC02 — rejeita e-mail duplicado                      [unit] RN09
-- Dado   que já existe um colaborador com `ana.souza@empresa.com`
-- Quando faço `POST /employees` com o mesmo e-mail
-- Então  recebo 409 com `Employee with email 'ana.souza@empresa.com' already exists`
+### EMP-AC06 — missing employee [unit] RN10
+- GET details, PATCH status, and POST offboard return 404 for a nonexistent ID
 
-### EMP-AC03 — valida a entrada                              [pipe]
-- Quando faço `POST /employees` com e-mail inválido, campo faltando, campo desconhecido
-  ou enviando `status` no corpo
-- Então  recebo 400
+### EMP-AC07 — places an employee on leave without losing licenses [unit] RN08
+- Changing ACTIVE to `ON_LEAVE` returns 200 and revokes no assignment
 
-### EMP-AC04 — lista com filtros                             [unit]
-- Dado   colaboradores de TI, RH e Financeiro com status variados
-- Quando faço `GET /employees?status=ACTIVE&department=TI`
-- Então  recebo só os colaboradores ativos de TI
-- E      sem filtros, recebo todos; `?status=` com valor fora do enum retorna 400 [pipe]
+### EMP-AC08 — returns from leave [unit]
+- Changing `ON_LEAVE` to `ACTIVE` returns 200
 
-### EMP-AC05 — detalha com licenças ativas                   [unit]
-- Dado   um colaborador com 2 atribuições ativas e 1 revogada
-- Quando faço `GET /employees/:id`
-- Então  `activeLicenses` contém só as 2 ativas, com `productName`
+### EMP-AC09 — status PATCH rejects OFFBOARDED [pipe]
+- Sending `OFFBOARDED` to the status endpoint returns 400; offboarding has its own endpoint
 
-### EMP-AC06 — colaborador inexistente                       [unit] RN10
-- Quando chamo `GET /employees/:id`, `PATCH /employees/:id/status` ou
-  `POST /employees/:id/offboard` com id que não existe
-- Então  recebo 404 com `Employee '<id>' not found`
+### EMP-AC10 — offboarded employees cannot change status [unit]
+- Any status change returns 409 with the documented message
 
-### EMP-AC07 — coloca em férias sem perder licenças          [unit] RN08
-- Dado   um colaborador `ACTIVE` com 2 licenças ativas
-- Quando faço `PATCH /employees/:id/status` com `{ "status": "ON_LEAVE" }`
-- Então  recebo 200 com `status = ON_LEAVE`
-- E      nenhuma atribuição é revogada
+### EMP-AC11 — offboarding revokes every license [unit] RN04
+- Given Ana has active M365, Slack, and Jira licenses costing 27400 cents in total
+- When Ana is offboarded
+- Then the response reports `OFFBOARDED`, 3 revoked licenses, and 27400 cents in monthly savings
+- `offboardedAt` and every assignment's `revokedAt` are set, with `revokeReason = OFFBOARDING`
+- All changes occur in one `em.transactional` transaction; a failure rolls back both status and assignments
 
-### EMP-AC08 — volta de férias                               [unit]
-- Dado   um colaborador `ON_LEAVE`
-- Quando faço `PATCH /employees/:id/status` com `{ "status": "ACTIVE" }`
-- Então  recebo 200 com `status = ACTIVE`
+### EMP-AC12 — offboarding without licenses [unit] RN04
+- An employee without active licenses returns 200 with zero revoked licenses and zero savings
 
-### EMP-AC09 — PATCH status não aceita OFFBOARDED            [pipe]
-- Quando faço `PATCH /employees/:id/status` com `{ "status": "OFFBOARDED" }`
-- Então  recebo 400 (para desligar existe `POST /employees/:id/offboard`)
+### EMP-AC13 — offboarding while on leave [unit] RN04
+- An `ON_LEAVE` employee is offboarded normally and all active licenses are revoked
 
-### EMP-AC10 — desligado não muda de status                  [unit]
-- Dado   um colaborador `OFFBOARDED`
-- Quando faço `PATCH /employees/:id/status` com qualquer valor
-- Então  recebo 409 com `Employee 'Ana Souza' is offboarded and cannot change status`
+### EMP-AC15 — concurrent offboarding and assignment [unit] [manual] RN02 RN04
+- If offboarding races with assignment, status change, or another offboarding request, the employee never ends OFFBOARDED with an active license and never returns from OFFBOARDED
+- Exactly one offboarding succeeds; the other receives RN05's 409
+- Every operation locks the employee row with `FOR UPDATE` before reading mutable status
 
-### EMP-AC11 — desligamento revoga todas as licenças         [unit] RN04
-- Dado   "Ana Souza" `ACTIVE` com licenças ativas de M365 (18900), Slack Pro (4500)
-  e Jira Software (4000)
-- Quando faço `POST /employees/:id/offboard`
-- Então  recebo 200 com `{ "status": "OFFBOARDED", "revokedLicenses": 3, "monthlySavingsCents": 27400 }`
-- E      `offboardedAt` é preenchido com a data atual
-- E      as 3 atribuições ficam com `revokedAt` preenchido e `revokeReason = OFFBOARDING`
-- E      tudo acontece dentro de **uma única transação** (`em.transactional`):
-  se algo falhar, nem o status nem as atribuições mudam
+### EMP-AC14 — cannot offboard twice [unit] RN05
+- Offboarding an `OFFBOARDED` employee returns 409 and changes nothing
 
-### EMP-AC12 — desligamento sem licenças                     [unit] RN04
-- Dado   um colaborador sem licenças ativas
-- Quando faço `POST /employees/:id/offboard`
-- Então  recebo 200 com `revokedLicenses = 0` e `monthlySavingsCents = 0`
-
-### EMP-AC13 — desligamento de quem está de férias           [unit] RN04
-- Dado   um colaborador `ON_LEAVE` com licenças ativas
-- Quando faço `POST /employees/:id/offboard`
-- Então  o desligamento acontece normalmente e as licenças são revogadas
-
-### EMP-AC15 — desligamento e atribuição simultâneos          [unit] [manual] RN02 RN04
-- Dado   um colaborador `ACTIVE`
-- Quando um `POST /employees/:id/offboard` chega ao mesmo tempo que um `POST /licenses`
-  para ele, um `PATCH /employees/:id/status` ou outro offboard
-- Então  ele nunca termina `OFFBOARDED` com licença ativa, nunca volta de `OFFBOARDED`
-  para `ACTIVE`/`ON_LEAVE`, e só um offboard tem sucesso (o outro recebe 409 da RN05)
-- Como   offboarding e mudança de status leem o colaborador com `FOR UPDATE` numa
-  transação; a atribuição também (LIC-AC14). Quem chegar depois espera e lê o
-  status já atualizado
-
-### EMP-AC14 — não desliga duas vezes                        [unit] RN05
-- Dado   um colaborador `OFFBOARDED`
-- Quando faço `POST /employees/:id/offboard`
-- Então  recebo 409 com `Employee 'Ana Souza' is already offboarded` e nada é alterado
-
-### EMP-AC16 — criação simultânea com o mesmo e-mail        [unit] [manual] RN09
-- Dado   que não existe colaborador com `ana.souza@empresa.com`
-- Quando várias requisições tentam criar esse e-mail ao mesmo tempo
-- Então  exatamente uma recebe 201 e as demais recebem 409 com
-  `Employee with email 'ana.souza@empresa.com' already exists`
-- E      existe apenas um colaborador com esse e-mail
-- Como   o índice único é a proteção final quando as requisições passam juntas
-  pela consulta de disponibilidade
+### EMP-AC16 — concurrent creation with the same email [unit] [manual] RN09
+- Concurrent requests for the same new email produce exactly one 201 and 409 for the rest
+- Only one employee exists; the unique index is the final safeguard

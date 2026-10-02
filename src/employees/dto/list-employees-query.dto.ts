@@ -6,7 +6,7 @@ export class ListEmployeesQueryDto {
   @IsEnum(EmployeeStatus)
   status?: EmployeeStatus;
 
-  /** @example 'TI' */
+  /** @example 'IT' */
   @IsOptional()
   @IsString()
   @IsNotEmpty()

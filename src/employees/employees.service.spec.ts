@@ -16,7 +16,7 @@ function buildEmployee(overrides: Partial<Employee> = {}): Employee {
     id: EMPLOYEE_ID,
     name: 'Ana Souza',
     email: 'ana.souza@empresa.com',
-    department: 'TI',
+    department: 'IT',
     ...overrides,
   });
 }
@@ -69,7 +69,7 @@ describe('EmployeesService', () => {
     const dto = {
       name: 'Ana Souza',
       email: 'ana.souza@empresa.com',
-      department: 'TI',
+      department: 'IT',
     };
 
     it('EMP-AC01 creates an ACTIVE employee', async () => {
@@ -117,12 +117,12 @@ describe('EmployeesService', () => {
     it('EMP-AC04 filters by status and department', async () => {
       const result = await service.findAll({
         status: EmployeeStatus.ACTIVE,
-        department: 'TI',
+        department: 'IT',
       });
 
       expect(em.find).toHaveBeenCalledWith(
         Employee,
-        { status: EmployeeStatus.ACTIVE, department: 'TI' },
+        { status: EmployeeStatus.ACTIVE, department: 'IT' },
         expect.anything(),
       );
       expect(result).toHaveLength(1);

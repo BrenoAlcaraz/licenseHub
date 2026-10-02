@@ -33,40 +33,40 @@ const PRODUCTS = [
 ];
 
 const EMPLOYEES = [
-  { name: 'Ana Souza', email: 'ana.souza@empresa.com', department: 'TI' },
-  { name: 'Bruno Lima', email: 'bruno.lima@empresa.com', department: 'TI' },
-  { name: 'Carla Mendes', email: 'carla.mendes@empresa.com', department: 'TI' },
-  { name: 'Diego Rocha', email: 'diego.rocha@empresa.com', department: 'TI' },
+  { name: 'Ana Souza', email: 'ana.souza@empresa.com', department: 'IT' },
+  { name: 'Bruno Lima', email: 'bruno.lima@empresa.com', department: 'IT' },
+  { name: 'Carla Mendes', email: 'carla.mendes@empresa.com', department: 'IT' },
+  { name: 'Diego Rocha', email: 'diego.rocha@empresa.com', department: 'IT' },
   {
     name: 'Elisa Martins',
     email: 'elisa.martins@empresa.com',
-    department: 'RH',
+    department: 'HR',
   },
   {
     name: 'Fábio Lima',
     email: 'fabio.lima@empresa.com',
-    department: 'RH',
+    department: 'HR',
     status: EmployeeStatus.ON_LEAVE,
   },
   {
     name: 'Gabriela Nunes',
     email: 'gabriela.nunes@empresa.com',
-    department: 'RH',
+    department: 'HR',
   },
   {
     name: 'Hugo Alves',
     email: 'hugo.alves@empresa.com',
-    department: 'Financeiro',
+    department: 'Finance',
   },
   {
     name: 'Isabela Costa',
     email: 'isabela.costa@empresa.com',
-    department: 'Financeiro',
+    department: 'Finance',
   },
   {
     name: 'João Pereira',
     email: 'joao.pereira@empresa.com',
-    department: 'Financeiro',
+    department: 'Finance',
   },
 ];
 

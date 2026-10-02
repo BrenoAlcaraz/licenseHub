@@ -10,7 +10,7 @@ export class CreateEmployeeDto {
   @IsEmail()
   email: string;
 
-  /** @example 'TI' */
+  /** @example 'IT' */
   @IsString()
   @IsNotEmpty()
   department: string;

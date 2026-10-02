@@ -90,7 +90,7 @@ describe('LicenseHub (e2e)', () => {
   }
 
   async function createEmployee(
-    department = 'TI',
+    department = 'IT',
   ): Promise<EmployeeResponseDto> {
     const id = ++uniqueId;
     const response = await api()
@@ -207,7 +207,7 @@ describe('LicenseHub (e2e)', () => {
       .send({
         name: 'X',
         email: 'not-an-email',
-        department: 'TI',
+        department: 'IT',
         status: 'ACTIVE',
       })
       .expect(400);
@@ -254,7 +254,7 @@ describe('LicenseHub (e2e)', () => {
       totalSeats: 2,
       monthlyCostCents: 5000,
     });
-    const employee = await createEmployee('RH');
+    const employee = await createEmployee('HR');
     const assigned = await assign(product.id, employee.id).expect(201);
 
     await api()
@@ -350,7 +350,7 @@ describe('LicenseHub (e2e)', () => {
 
     it('E2E-11 (EMP-AC16) concurrent creates with the same email return 409', async () => {
       const email = `contested${++uniqueId}@e2e.com`;
-      const body = { name: 'Contested Employee', email, department: 'TI' };
+      const body = { name: 'Contested Employee', email, department: 'IT' };
 
       const responses = await Promise.all(
         Array.from({ length: 10 }, () => api().post('/employees').send(body)),

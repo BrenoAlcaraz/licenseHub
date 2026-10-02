@@ -36,9 +36,9 @@ const SEED_PRODUCT_ROWS = [
   },
 ];
 const SEED_DEPARTMENT_ROWS = [
-  { department: 'Financeiro', active_licenses: 2, monthly_cost_cents: 23400 },
-  { department: 'TI', active_licenses: 11, monthly_cost_cents: 105100 },
-  { department: 'RH', active_licenses: 4, monthly_cost_cents: 69800 },
+  { department: 'Finance', active_licenses: 2, monthly_cost_cents: 23400 },
+  { department: 'IT', active_licenses: 11, monthly_cost_cents: 105100 },
+  { department: 'HR', active_licenses: 4, monthly_cost_cents: 69800 },
 ];
 
 describe('ReportsService', () => {
@@ -78,10 +78,10 @@ describe('ReportsService', () => {
       const report = await service.getCostReport();
 
       expect(report.byDepartment).toEqual([
-        { department: 'TI', activeLicenses: 11, monthlyCostCents: 105100 },
-        { department: 'RH', activeLicenses: 4, monthlyCostCents: 69800 },
+        { department: 'IT', activeLicenses: 11, monthlyCostCents: 105100 },
+        { department: 'HR', activeLicenses: 4, monthlyCostCents: 69800 },
         {
-          department: 'Financeiro',
+          department: 'Finance',
           activeLicenses: 2,
           monthlyCostCents: 23400,
         },

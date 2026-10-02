@@ -1,5 +1,5 @@
 export class DepartmentCostDto {
-  /** @example 'TI' */
+  /** @example 'IT' */
   department: string;
   /** Active license assignments of the department's employees. */
   activeLicenses: number;
