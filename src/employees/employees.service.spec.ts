@@ -1,6 +1,8 @@
 import { EntityManager } from '@mikro-orm/postgresql';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { LicenseAssignment } from '../licenses/license-assignment.entity';
+import { Product } from '../products/product.entity';
 import { EmployeeStatus } from './employee-status.enum';
 import { Employee } from './employee.entity';
 import { EmployeesService } from './employees.service';
@@ -101,12 +103,39 @@ describe('EmployeesService', () => {
   });
 
   describe('findOne', () => {
-    it('returns the employee', async () => {
-      em.findOne.mockResolvedValue(buildEmployee());
+    it('EMP-AC05 returns the employee with only the active licenses', async () => {
+      const employee = buildEmployee();
+      const assignedAt = new Date('2026-09-01T00:00:00Z');
+      const slack = Object.assign(new Product(), {
+        id: 'slack-id',
+        name: 'Slack Pro',
+      });
+      em.findOne.mockResolvedValue(employee);
+      em.find.mockResolvedValue([
+        Object.assign(new LicenseAssignment(), {
+          id: 'assignment-id',
+          product: slack,
+          employee,
+          assignedAt,
+        }),
+      ]);
 
       const result = await service.findOne(EMPLOYEE_ID);
 
+      expect(em.find).toHaveBeenCalledWith(
+        LicenseAssignment,
+        { employee, revokedAt: null },
+        expect.objectContaining({ populate: ['product'] }),
+      );
       expect(result).toMatchObject({ id: EMPLOYEE_ID, name: 'Ana Souza' });
+      expect(result.activeLicenses).toEqual([
+        {
+          assignmentId: 'assignment-id',
+          productId: 'slack-id',
+          productName: 'Slack Pro',
+          assignedAt,
+        },
+      ]);
     });
 
     it('EMP-AC06 (RN10) throws 404 when the employee does not exist', async () => {

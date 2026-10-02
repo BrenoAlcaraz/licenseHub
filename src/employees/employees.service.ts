@@ -5,7 +5,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { LicenseAssignment } from '../licenses/license-assignment.entity';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
+import { EmployeeDetailResponseDto } from './dto/employee-detail-response.dto';
 import { EmployeeResponseDto } from './dto/employee-response.dto';
 import { ListEmployeesQueryDto } from './dto/list-employees-query.dto';
 import { UpdateEmployeeStatusDto } from './dto/update-employee-status.dto';
@@ -40,9 +42,23 @@ export class EmployeesService {
     return employees.map((employee) => this.toResponse(employee));
   }
 
-  async findOne(id: string): Promise<EmployeeResponseDto> {
+  async findOne(id: string): Promise<EmployeeDetailResponseDto> {
     const employee = await this.findEmployeeOrFail(id);
-    return this.toResponse(employee);
+    const activeAssignments = await this.em.find(
+      LicenseAssignment,
+      { employee, revokedAt: null },
+      { populate: ['product'], orderBy: { assignedAt: 'ASC' } },
+    );
+
+    return {
+      ...this.toResponse(employee),
+      activeLicenses: activeAssignments.map((assignment) => ({
+        assignmentId: assignment.id,
+        productId: assignment.product.id,
+        productName: assignment.product.name,
+        assignedAt: assignment.assignedAt,
+      })),
+    };
   }
 
   async updateStatus(

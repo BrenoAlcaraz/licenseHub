@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
+import { EmployeeDetailResponseDto } from './dto/employee-detail-response.dto';
 import { EmployeeResponseDto } from './dto/employee-response.dto';
 import { ListEmployeesQueryDto } from './dto/list-employees-query.dto';
 import { UpdateEmployeeStatusDto } from './dto/update-employee-status.dto';
@@ -35,7 +36,7 @@ export class EmployeesController {
   @Get(':id')
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<EmployeeResponseDto> {
+  ): Promise<EmployeeDetailResponseDto> {
     return this.employeesService.findOne(id);
   }
 

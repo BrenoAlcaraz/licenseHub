@@ -1,6 +1,7 @@
 import { EntityManager } from '@mikro-orm/postgresql';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { LicenseAssignment } from '../licenses/license-assignment.entity';
 import { Product } from './product.entity';
 import { ProductsService } from './products.service';
 
@@ -25,6 +26,7 @@ describe('ProductsService', () => {
     create: jest.Mock;
     assign: jest.Mock;
     flush: jest.Mock;
+    count: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -36,6 +38,7 @@ describe('ProductsService', () => {
         Object.assign(entity, data),
       ),
       flush: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -105,15 +108,18 @@ describe('ProductsService', () => {
   });
 
   describe('findAll', () => {
-    it('returns every product as a response with seat counters', async () => {
-      em.find.mockResolvedValue([
-        buildProduct(),
-        buildProduct({ id: 'other-id', name: 'Slack Pro', totalSeats: 5 }),
-      ]);
+    it('PRD-AC04 computes seats from active assignments only', async () => {
+      const product = buildProduct();
+      em.find.mockResolvedValue([product]);
+      em.count.mockResolvedValue(7);
 
       const result = await service.findAll();
 
-      expect(result.map((product) => product.seatsAvailable)).toEqual([10, 5]);
+      expect(em.count).toHaveBeenCalledWith(LicenseAssignment, {
+        product,
+        revokedAt: null,
+      });
+      expect(result[0]).toMatchObject({ seatsInUse: 7, seatsAvailable: 3 });
     });
   });
 

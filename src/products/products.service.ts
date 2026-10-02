@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { LicenseAssignment } from '../licenses/license-assignment.entity';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ProductResponseDto } from './dto/product-response.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -57,9 +58,9 @@ export class ProductsService {
     return product;
   }
 
-  // Seats start being used in step 5, when license assignments exist.
-  countSeatsInUse(): Promise<number> {
-    return Promise.resolve(0);
+  /** Seats in use = active (not revoked) assignments of the product. */
+  countSeatsInUse(product: Product): Promise<number> {
+    return this.em.count(LicenseAssignment, { product, revokedAt: null });
   }
 
   private async ensureNameIsAvailable(name: string): Promise<void> {
@@ -70,7 +71,7 @@ export class ProductsService {
   }
 
   private async toResponse(product: Product): Promise<ProductResponseDto> {
-    const seatsInUse = await this.countSeatsInUse();
+    const seatsInUse = await this.countSeatsInUse(product);
     return {
       id: product.id,
       name: product.name,

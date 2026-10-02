@@ -95,6 +95,12 @@ O service checa nesta ordem e para no primeiro erro (guard clauses):
 - Quando faço `POST /licenses` com o mesmo par produto/colaborador
 - Então  recebo 409 com `Employee 'Ana Souza' already has an active 'Slack Pro' license`
 
+### LIC-AC13 — duplicata concorrente barrada pelo índice     [unit] RN03
+- Dado   duas requisições simultâneas atribuindo o mesmo produto ao mesmo colaborador
+- Quando as duas passam pela checagem do service e a segunda grava no banco
+- Então  o índice único parcial rejeita a segunda e a API responde 409 com a
+  mesma mensagem da LIC-AC05 (não 500)
+
 ### LIC-AC06 — pode receber de novo depois de revogada       [unit] RN03
 - Dado   "Ana Souza" com uma atribuição **revogada** de "Slack Pro" e vaga disponível
 - Quando faço `POST /licenses` com o mesmo par
