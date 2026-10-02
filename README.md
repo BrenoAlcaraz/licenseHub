@@ -1,24 +1,24 @@
 # LicenseHub
 
-API REST que controla as licenças de software de uma empresa: quem tem cada licença, quantas sobram, quanto custam e quanto se economiza ao desligar um colaborador.
+LicenseHub is a REST API for managing a company's software licenses: who has each license, how many seats remain available, how much they cost, and how much the company saves when an employee is offboarded.
 
-## O problema
+## The problem
 
-No meu estágio de automação de processos, o time de TI controlava as licenças Microsoft manualmente. A cada contratação, desligamento ou férias, alguém precisava lembrar de atribuir ou remover a licença. Na prática, a empresa pagava por licenças de pessoas que já tinham saído e ninguém sabia quantas licenças estavam sobrando. Resolvi isso lá com Power Platform; aqui reconstruí a solução como um serviço back-end, com as regras de negócio explícitas, testadas e protegidas contra acessos simultâneos.
+During my process automation internship, the IT team managed Microsoft licenses manually. Whenever someone was hired, offboarded, or went on leave, someone had to remember to assign or remove their license. In practice, the company kept paying for licenses assigned to former employees, and no one knew how many seats were available. I originally solved this problem with Power Platform; here, I rebuilt the solution as a back-end service with explicit, tested business rules and protection against concurrent requests.
 
-## Funcionalidades
+## Features
 
-- Cadastro de **produtos** (licenças compradas) com vagas em uso e disponíveis calculadas.
-- Cadastro de **colaboradores**, com filtros por status e departamento, e mudança de status (`ACTIVE` ⇄ `ON_LEAVE`).
-- **Atribuição e revogação** de licenças, com histórico completo (nada é apagado).
-- **Desligamento** em uma única transação: o colaborador vira `OFFBOARDED` e todas as licenças dele são liberadas.
-- **Relatório de custos**: custo total, custo por departamento, vagas ociosas e economia potencial.
-- **Alerta em tempo real** (WebSocket) quando um produto chega a 90% das vagas em uso.
-- Documentação interativa com **Swagger** em `/docs`.
+- Product management with calculated used and available seats.
+- Employee management with status and department filters.
+- License assignment and revocation with a complete history; assignments are never deleted.
+- Transactional offboarding that changes the employee status and releases all active licenses.
+- Cost reports with total cost, cost by department, idle seats, and potential savings.
+- Real-time WebSocket alerts when a product reaches 90% seat usage.
+- Interactive Swagger documentation at `/docs`.
 
-## Arquitetura do sistema
+## System architecture
 
-O LicenseHub é um monólito modular: uma única API NestJS organizada em quatro módulos de domínio, com PostgreSQL como único banco de dados. Os rótulos do diagrama estão em inglês para facilitar seu uso como referência técnica.
+LicenseHub is a modular monolith: a single NestJS API organized into four domain modules, with PostgreSQL as its only database.
 
 ```mermaid
 flowchart LR
@@ -47,8 +47,6 @@ flowchart LR
     HTTP --> Employees
     HTTP --> Licenses
     HTTP --> Reports
-    Licenses -. uses .-> Products
-    Licenses -. uses .-> Employees
     Products --> ORM
     Employees --> ORM
     Licenses --> ORM
@@ -59,7 +57,7 @@ flowchart LR
     Gateway -->|seats.threshold| RealtimeClient
 ```
 
-## Modelo de domínio
+## Domain model
 
 ```mermaid
 erDiagram
@@ -97,83 +95,81 @@ erDiagram
     }
 ```
 
-Uma atribuição está ativa enquanto `revokedAt` é `null` e nunca é apagada, preservando o histórico. Além das chaves mostradas acima, o banco possui o índice único parcial `UNIQUE (product_id, employee_id) WHERE revoked_at IS NULL`: ele impede duas atribuições ativas do mesmo produto para o mesmo colaborador, mas permite uma nova atribuição depois da revogação.
+An assignment is active while `revokedAt` is `null` and is never deleted, preserving its history. The partial unique index `UNIQUE (product_id, employee_id) WHERE revoked_at IS NULL` prevents two active assignments of the same product to one employee while allowing reassignment after revocation.
 
-## Regras de negócio
+## Business rules
 
-| Código | Regra | Erro |
+| Code | Rule | Error |
 |---|---|---|
-| RN01 | Só é possível atribuir licença se o produto tiver vaga (`em uso < totalSeats`). | 409 |
-| RN02 | Só colaboradores com status `ACTIVE` podem receber licença. | 409 |
-| RN03 | Um colaborador não pode ter duas atribuições **ativas** do mesmo produto. | 409 |
-| RN04 | Desligar muda o status para `OFFBOARDED`, preenche `offboardedAt` e revoga **todas** as atribuições ativas com `revokeReason = OFFBOARDING`, em **uma única transação**. | — |
-| RN05 | Não é possível desligar quem já está `OFFBOARDED`. | 409 |
-| RN06 | Não é possível revogar uma atribuição que já foi revogada. | 409 |
-| RN07 | Não é possível reduzir `totalSeats` para menos do que as licenças em uso. | 409 |
-| RN08 | Colaborador `ON_LEAVE` mantém as licenças que já tem, mas não recebe novas. | — |
-| RN09 | `name` de produto e `email` de colaborador são únicos. | 409 |
-| RN10 | Recurso inexistente (produto, colaborador, atribuição). | 404 |
+| RN01 | A license can only be assigned if the product has an available seat (`seats in use < totalSeats`). | 409 |
+| RN02 | Only employees with `ACTIVE` status can receive a license. | 409 |
+| RN03 | An employee cannot have two active assignments of the same product. | 409 |
+| RN04 | Offboarding changes the status to `OFFBOARDED`, sets `offboardedAt`, and revokes all active assignments with `revokeReason = OFFBOARDING` in a single transaction. | — |
+| RN05 | An employee who is already `OFFBOARDED` cannot be offboarded again. | 409 |
+| RN06 | An assignment that has already been revoked cannot be revoked again. | 409 |
+| RN07 | `totalSeats` cannot be reduced below the number of seats in use. | 409 |
+| RN08 | An `ON_LEAVE` employee keeps their current licenses but cannot receive new ones. | — |
+| RN09 | Product `name` and employee `email` must be unique. | 409 |
+| RN10 | A missing product, employee, or assignment returns not found. | 404 |
 
-Entrada inválida (campo faltando, tipo errado, e-mail inválido, campo desconhecido, `:id` que não é UUID) retorna **400**.
+Invalid input—such as a missing field, wrong type, invalid email, unknown field, or non-UUID `:id`—returns **400**. Detailed endpoint behavior and acceptance criteria are documented in [`specs/`](specs/).
 
-O comportamento detalhado de cada endpoint, com critérios de aceite, está em [`specs/`](specs/).
+## Tech stack
 
-## Stack
-
-| Tecnologia | Por quê |
+| Technology | Why |
 |---|---|
-| **Node.js 22 LTS + TypeScript (`strict`)** | Tipagem forte pega erros antes de rodar; LTS garante suporte longo. |
-| **NestJS 11** | Módulos, injeção de dependência e pipes de validação prontos; organiza o código por domínio. Usei a v11 (e não a 12) porque o adaptador `@mikro-orm/nestjs` do MikroORM 6 só suporta Nest 10/11. |
-| **MikroORM 6** | Unit of Work e identity map, migrations geradas a partir das entidades, transações e locks com API simples. |
-| **PostgreSQL 16** | Transações ACID, `SELECT ... FOR UPDATE`, índice único parcial e `CHECK` para enums. |
-| **class-validator + class-transformer** | Validação declarativa nos DTOs; o `ValidationPipe` global devolve 400 sem código nos controllers. |
-| **@nestjs/config** | Configuração por variáveis de ambiente (`.env`). |
-| **@nestjs/swagger** | Documentação gerada a partir dos DTOs (com o plugin do CLI, sem repetir decorators). |
-| **Jest** | Testes unitários dos services com o `EntityManager` mockado. |
-| **Socket.IO** (`@nestjs/websockets`) | Alerta em tempo real: o servidor avisa os clientes sem que eles precisem ficar perguntando; reconexão e eventos com nome prontos. |
-| **Docker + Docker Compose** | Sobe banco e API com um comando, igual em qualquer máquina. |
-| **ESLint + Prettier** | Padrão de código e formatação automáticos. |
+| **Node.js 22 LTS + TypeScript (`strict`)** | Strong typing catches errors before runtime, while LTS provides long-term support. |
+| **NestJS 11** | Modules, dependency injection, and validation pipes keep the code organized by domain. Nest 11 is used because MikroORM 6's Nest adapter supports Nest 10/11. |
+| **MikroORM 6** | Unit of Work, identity map, entity-based migrations, transactions, and locking through a straightforward API. |
+| **PostgreSQL 16** | ACID transactions, `SELECT ... FOR UPDATE`, partial unique indexes, and enum constraints. |
+| **class-validator + class-transformer** | Declarative DTO validation through a global `ValidationPipe`. |
+| **@nestjs/config** | Environment-variable configuration through `.env`. |
+| **@nestjs/swagger** | Interactive API documentation generated from DTOs. |
+| **Jest** | Unit tests for services with a mocked `EntityManager`. |
+| **Socket.IO** | Named real-time events, reconnection, and no client polling. |
+| **Docker + Docker Compose** | Starts the database and API consistently with one command. |
+| **ESLint + Prettier** | Automated code quality and formatting. |
 
-## Como rodar
+## Getting started
 
-**Pré-requisitos:** Docker. Para rodar o seed e os testes no host também é preciso Node.js 22.
+**Prerequisites:** Docker. Node.js 22 is also required to run the seed and tests on the host.
 
 ```bash
 git clone https://github.com/BrenoAlcaraz/licenseHub.git licensehub
 cd licensehub
 cp .env.example .env
 
-# Sobe PostgreSQL + API. As migrations são aplicadas automaticamente.
+# Start PostgreSQL and the API. Migrations are applied automatically.
 docker compose up --build -d
 
-# Popula o banco com dados de exemplo (4 produtos, 10 colaboradores, 17 atribuições)
+# Populate the database with sample data: 4 products, 10 employees, and 17 assignments.
 npm install
 npm run seed
 ```
 
-Sem Node.js no host, o seed também pode rodar dentro do container:
+Without Node.js on the host, run the seed inside the container:
 
 ```bash
 docker compose exec api node dist/database/seed.js
 ```
 
-Pronto: **Swagger em http://localhost:3000/docs**.
+Swagger is available at **http://localhost:3000/docs**.
 
-- O seed se recusa a rodar se o banco já tiver dados. Para recomeçar do zero: `docker compose down -v && docker compose up --build -d`.
-- Se a porta 5432 já estiver em uso (por exemplo, um PostgreSQL instalado localmente), troque `DB_PORT` no `.env` (ex.: `5433`). A API dentro do Docker não é afetada; só muda a porta publicada no host.
+- The seed refuses to run if the database already contains data. To start over, run `docker compose down -v && docker compose up --build -d`.
+- If port 5432 is already in use, change `DB_PORT` in `.env` (for example, to `5433`). This only changes the port published on the host.
 
-**Desenvolvimento local** (API fora do Docker, só o banco no container):
+For local development, run the API on the host and only the database in Docker:
 
 ```bash
 docker compose up -d db
 npm run start:dev
 ```
 
-## Exemplos de uso
+## Usage examples
 
-Fluxo completo com os dados do seed: **atribuir → desligar → relatório**. Os ids são UUIDs gerados pelo banco; pegue-os nas listagens (ou no Swagger).
+The examples below demonstrate the complete **assign → offboard → report** flow with seed data. IDs are generated UUIDs; retrieve them from the list endpoints or Swagger.
 
-**1. Ver produtos e vagas.** O Jira Software tem 8 vagas e 4 em uso:
+**1. View products and available seats:**
 
 ```bash
 curl http://localhost:3000/products
@@ -181,37 +177,52 @@ curl http://localhost:3000/products
 
 ```json
 [
-  { "id": "…", "name": "Jira Software", "vendor": "Atlassian", "monthlyCostCents": 4000,
-    "totalSeats": 8, "seatsInUse": 4, "seatsAvailable": 4 }
+  {
+    "id": "…",
+    "name": "Jira Software",
+    "vendor": "Atlassian",
+    "monthlyCostCents": 4000,
+    "totalSeats": 8,
+    "seatsInUse": 4,
+    "seatsAvailable": 4
+  }
 ]
 ```
 
-**2. Atribuir uma licença** ao João Pereira (que não tem nenhuma):
+**2. Assign a license to João Pereira:**
 
 ```bash
 curl -X POST http://localhost:3000/licenses \
   -H "Content-Type: application/json" \
-  -d '{"productId":"<id-do-jira>","employeeId":"<id-do-joao>"}'
+  -d '{"productId":"<jira-id>","employeeId":"<joao-id>"}'
 ```
 
-Tentar dar uma licença do **Slack Pro** (lotado, 5/5) retorna:
+Attempting to assign Slack Pro when all five seats are in use returns:
 
 ```json
-{ "statusCode": 409, "error": "Conflict",
-  "message": "Product 'Slack Pro' has no available seats (5/5 in use)" }
+{
+  "statusCode": 409,
+  "error": "Conflict",
+  "message": "Product 'Slack Pro' has no available seats (5/5 in use)"
+}
 ```
 
-**3. Desligar a Ana Souza.** Ela tinha Microsoft 365, Slack e Jira:
+**3. Offboard Ana Souza:**
 
 ```bash
-curl -X POST http://localhost:3000/employees/<id-da-ana>/offboard
+curl -X POST http://localhost:3000/employees/<ana-id>/offboard
 ```
 
 ```json
-{ "employeeId": "…", "status": "OFFBOARDED", "revokedLicenses": 3, "monthlySavingsCents": 27400 }
+{
+  "employeeId": "…",
+  "status": "OFFBOARDED",
+  "revokedLicenses": 3,
+  "monthlySavingsCents": 27400
+}
 ```
 
-**4. Relatório de custos:**
+**4. View the cost report:**
 
 ```bash
 curl http://localhost:3000/reports/costs
@@ -221,191 +232,188 @@ curl http://localhost:3000/reports/costs
 {
   "totalMonthlyCostCents": 326000,
   "byDepartment": [
-    { "department": "TI", "activeLicenses": 8, "monthlyCostCents": 77700 },
-    { "department": "RH", "activeLicenses": 4, "monthlyCostCents": 69800 },
-    { "department": "Financeiro", "activeLicenses": 3, "monthlyCostCents": 27400 }
+    { "department": "IT", "activeLicenses": 8, "monthlyCostCents": 77700 },
+    { "department": "HR", "activeLicenses": 4, "monthlyCostCents": 69800 },
+    { "department": "Finance", "activeLicenses": 3, "monthlyCostCents": 27400 }
   ],
-  "idleSeats": [ … ],
+  "idleSeats": ["…"],
   "potentialMonthlySavingsCents": 151100
 }
 ```
 
-A economia potencial passou de 127.700 (seed) para 151.100: +27.400 das licenças liberadas pela Ana e −4.000 da vaga do Jira que o João passou a usar. O TI caiu de 11 para 8 licenças, e o Financeiro ganhou a do João.
+Potential savings increase from 127,700 in the seed data to 151,100: +27,400 from Ana's released licenses and −4,000 from the Jira seat now used by João.
 
-> **Windows:** ao usar `curl` no Git Bash/PowerShell com acentos no corpo (ex.: `"Fábio"`), o terminal pode mudar a codificação do texto. Use o Swagger ou envie o JSON a partir de um arquivo (`-d @body.json`).
+> **Windows:** `curl` in Git Bash or PowerShell may change the encoding of accented request-body text such as `"Fábio"`. Use Swagger or send JSON from a file with `-d @body.json`.
 
-## Alerta em tempo real (WebSocket)
+## Real-time alerts
 
-Quando uma atribuição deixa um produto com **90% ou mais** das vagas em uso, a API envia o evento `seats.threshold` pelo **Socket.IO** a todos os clientes conectados. Ele usa o mesmo endereço e porta da API. Assim o TI fica sabendo que precisa comprar licenças *antes* de alguém receber um 409. Detalhes em [`specs/realtime.spec.md`](specs/realtime.spec.md).
+When an assignment brings a product to at least **90% seat usage**, the API broadcasts a `seats.threshold` event through Socket.IO to all connected clients. It uses the same address and port as the API. See [`specs/realtime.spec.md`](specs/realtime.spec.md) for details.
 
 ```json
-{ "productId": "…", "productName": "Microsoft 365 E3", "seatsInUse": 9, "totalSeats": 10 }
+{
+  "productId": "…",
+  "productName": "Microsoft 365 E3",
+  "seatsInUse": 9,
+  "totalSeats": 10
+}
 ```
 
-**Como testar no navegador** (sem instalar nada):
+To test it in a browser without installing anything:
 
-1. Abra http://localhost:3000/docs e o console do navegador (F12).
-2. Cole o código abaixo. Ele carrega o cliente Socket.IO servido pela própria API e fica ouvindo:
+1. Open http://localhost:3000/docs and the browser console (F12).
+2. Paste the following code to load the Socket.IO client and listen for the event:
 
    ```js
    const s = document.createElement('script');
    s.src = '/socket.io/socket.io.js';
-   s.onload = () => io().on('seats.threshold', (e) => console.log('ALERTA', e));
+   s.onload = () => io().on('seats.threshold', (event) => console.log('ALERT', event));
    document.head.appendChild(s);
    ```
 
-3. No Swagger, na mesma aba, atribua o **Microsoft 365 E3** (7/10 no seed) ao **João Pereira** (8/10, sem alerta) e depois à **Gabriela Nunes**. Com 9/10, o console mostra `ALERTA { …, seatsInUse: 9, totalSeats: 10 }`.
+3. In Swagger, assign Microsoft 365 E3 (7/10 in the seed data) to João Pereira and then to Gabriela Nunes. At 9/10, the console displays the alert.
 
-**Com o Postman:** crie uma requisição do tipo *Socket.IO* para `http://localhost:3000`, adicione o evento `seats.threshold` em *Events* (com *Listen* ligado), conecte e faça as atribuições acima.
+With Postman, create a Socket.IO request to `http://localhost:3000`, add `seats.threshold` under **Events**, enable **Listen**, connect, and make the assignments above.
 
-## Como rodar os testes
+## Running the tests
 
 ```bash
-npm test          # testes unitários (61 testes, 4 suítes)
-npm run test:cov  # com relatório de cobertura em coverage/
+npm test          # unit tests: 61 tests in 4 suites
+npm run test:cov  # generate the coverage report in coverage/
 npm run lint      # ESLint + Prettier
-npm run build     # checagem de tipos completa
+npm run build     # full type checking
 
-docker compose up -d db   # o e2e precisa do PostgreSQL
-npm run test:e2e          # testes ponta a ponta (14 testes)
+docker compose up -d db   # e2e tests require PostgreSQL
+npm run test:e2e          # 14 end-to-end tests
 ```
 
-- Os **testes unitários** cobrem **todas as regras de negócio** nos services, com o `EntityManager` mockado. A cobertura de linhas dos services fica entre 98% e 100%.
-- Os **testes e2e** ([`specs/e2e.spec.md`](specs/e2e.spec.md)) rodam contra o PostgreSQL de verdade, num banco separado (`licensehub_e2e`, criado automaticamente), sem tocar nos dados do seed. Eles cobrem:
-  - o fluxo completo produto → colaborador → atribuição → desligamento;
-  - a validação de entrada;
-  - a atomicidade do desligamento, forçando uma falha no banco;
-  - os **cenários de concorrência**, incluindo 20 requisições disputando 1 vaga
-    e criações/renomeações simultâneas disputando o mesmo nome ou e-mail;
-  - o **alerta em tempo real**, com um cliente WebSocket de verdade conectado. Ele foi escrito sobre o `WebSocket` nativo do Node 22, sem dependência extra.
+- Unit tests cover all business rules in the services using a mocked `EntityManager`. Service line coverage ranges from 98% to 100%.
+- End-to-end tests run against a separate real PostgreSQL database (`licensehub_e2e`) without touching seed data. They cover the complete flow, input validation, offboarding atomicity, concurrency, and real-time alerts. See [`specs/e2e.spec.md`](specs/e2e.spec.md).
+- Each test name references its acceptance criterion, such as `LIC-AC07 (RN01) fails with 409 when the product has no available seats`.
+- `npm run build` is part of verification because `ts-jest` does not type-check across files.
 
-  Para conferir que esses testes pegam regressões, removi o lock da atribuição de propósito: o E2E-05 falhou com 10 licenças atribuídas para 1 vaga.
-- O nome de cada teste cita o critério de aceite da spec (ex.: `LIC-AC07 (RN01) fails with 409 when the product has no available seats`).
-- `npm run build` faz parte da verificação: o `ts-jest` não faz checagem de tipos entre arquivos, então um erro de tipo pode passar nos testes e só aparecer no build.
+## Project structure
 
-## Estrutura do projeto
-
-```
+```text
 licensehub/
-├── specs/                   # critérios de aceite de cada módulo (fonte da verdade)
+├── specs/                   # acceptance criteria for each module; the source of truth
 ├── src/
-│   ├── main.ts              # bootstrap: migrations, ValidationPipe global, Swagger
-│   ├── app.module.ts        # junta config, MikroORM e os módulos de domínio
-│   ├── app.setup.ts         # configuração HTTP compartilhada (ValidationPipe)
-│   ├── mikro-orm.config.ts  # configuração do banco (app e CLI de migrations)
-│   ├── products/            # produtos, cálculo de vagas, RN07, RN09
-│   ├── employees/           # colaboradores, status, desligamento (RN04, RN05, RN08)
-│   ├── licenses/            # atribuição e revogação (RN01–RN03, RN06) + alerta WebSocket
-│   ├── reports/             # relatório de custos e desperdício
+│   ├── main.ts              # bootstrap: migrations, global ValidationPipe, Swagger
+│   ├── app.module.ts        # combines config, MikroORM, and domain modules
+│   ├── app.setup.ts         # shared HTTP configuration
+│   ├── mikro-orm.config.ts  # database configuration for the app and migration CLI
+│   ├── products/            # products, seat calculations, RN07, RN09
+│   ├── employees/           # employees, statuses, offboarding: RN04, RN05, RN08
+│   ├── licenses/            # assignment, revocation, and WebSocket alerts
+│   ├── reports/             # cost and waste reports
 │   └── database/
-│       ├── migrations/      # schema versionado (gerado pelo MikroORM)
-│       └── seed.ts          # dados de exemplo
-├── test/                    # testes e2e contra o PostgreSQL real
-├── Dockerfile               # multi-stage: build → runtime enxuto
-└── docker-compose.yml       # PostgreSQL + API
+│       ├── migrations/      # versioned schema generated by MikroORM
+│       └── seed.ts          # sample data
+├── test/                    # e2e tests against PostgreSQL
+├── Dockerfile               # multi-stage build and lean runtime image
+└── docker-compose.yml       # PostgreSQL and API
 ```
 
-Cada módulo de domínio contém a entidade, o service (regras), o controller (HTTP), os DTOs e o teste do service.
+Each domain module contains its entity, service, controller, DTOs, and service tests. Business rules live in services; controllers only handle HTTP concerns and delegate work.
 
-## Spec Driven Development
+## Spec-driven development
 
-Nada foi implementado sem estar descrito antes em [`specs/`](specs/). O ciclo de cada módulo foi:
+Nothing was implemented before being documented in [`specs/`](specs/). Each module followed this cycle:
 
-1. **Spec**: endpoints, mensagens de erro exatas e critérios de aceite no formato *Dado / Quando / Então*, cada um com um ID (`LIC-AC05`) e a regra que cobre (`RN03`).
-2. **Red**: um teste por critério, escrito antes do código, falhando.
-3. **Green**: entidade, migration, DTOs, service e controller até os testes passarem.
-4. **Refactor**: limpeza com os testes verdes, mais lint e build.
+1. **Spec:** define endpoints, exact error messages, and acceptance criteria in Given/When/Then form.
+2. **Red:** write one failing test for each criterion before implementation.
+3. **Green:** implement the entity, migration, DTOs, service, and controller until tests pass.
+4. **Refactor:** clean up with green tests, then run lint and build checks.
 
-Cada critério é marcado como `[unit]` (teste do service), `[pipe]` (validação do DTO) ou `[manual]` (conferido contra o banco). Um `grep` pelo ID encontra a spec e o teste que a garante. Os números do relatório na spec são calculados a partir dos dados do seed, então a própria spec serve como teste de aceitação.
+Each criterion is marked `[unit]`, `[pipe]`, or `[manual]`. Searching for its ID finds both the spec and the test that guarantees it. Report figures in the spec are calculated from seed data, so the spec also serves as an acceptance test.
 
-## Decisões técnicas
+## Technical decisions
 
-**Dinheiro em centavos (inteiros).** `float` não representa valores decimais com exatidão (`0.1 + 0.2 !== 0.3`). Com inteiros em centavos, somas e multiplicações são exatas; a formatação em reais fica para quem exibe.
+**Money stored as integer cents.** Floating-point numbers cannot represent decimal values exactly (`0.1 + 0.2 !== 0.3`). Integer cents make additions and multiplications exact; currency formatting belongs to the consumer.
 
-**Revogação sem apagar (soft revoke).** Revogar preenche `revokedAt` e `revokeReason` em vez de apagar a linha. A tabela de atribuições vira o histórico completo (quem teve qual licença, quando e por quê) sem precisar de uma tabela de auditoria separada. "Ativa" é simplesmente `revokedAt IS NULL`.
+**Revocation without deletion.** Revocation sets `revokedAt` and `revokeReason` instead of deleting the row. The assignment table becomes the complete history—who had which license, when, and why—without requiring a separate audit table.
 
-**Transação no desligamento.** Mudar o status e revogar N licenças são várias escritas. Com `em.transactional()`, ou tudo é salvo ou nada é: nunca existe um colaborador `OFFBOARDED` com licença ativa, nem licenças revogadas de alguém que continua `ACTIVE`. Testei isso forçando o `UPDATE` do colaborador a falhar: as revogações foram desfeitas junto.
+**Transactional offboarding.** Changing an employee's status and revoking multiple licenses requires several writes. `em.transactional()` ensures that either every change is committed or none is. An `OFFBOARDED` employee can never retain an active license, and licenses cannot be revoked while the employee remains `ACTIVE`.
 
-**Concorrência: lock pessimista onde a regra é decidida.** Toda operação que *lê → checa uma regra → grava* lê a linha que decide a regra com `SELECT ... FOR UPDATE`, dentro de uma transação. Quem chega depois espera e lê o dado já atualizado.
+**Pessimistic locking for concurrency.** Every operation that reads, checks a rule, and writes locks the row that determines the rule with `SELECT ... FOR UPDATE` inside a transaction.
 
-| Operação | Linha travada | Protege |
+| Operation | Locked row | Protects |
 |---|---|---|
-| Atribuir licença | produto e colaborador | RN01, RN02 (vs. desligamento) |
-| Reduzir `totalSeats` | produto | RN07 (vs. atribuição) |
-| Desligar / mudar status | colaborador | RN04, RN05 |
-| Revogar | atribuição | RN06 |
+| Assign a license | Product and employee | RN01 and RN02 |
+| Reduce `totalSeats` | Product | RN07 against concurrent assignment |
+| Offboard or change status | Employee | RN04 and RN05 |
+| Revoke | Assignment | RN06 |
 
-Antes disso, 20 atribuições simultâneas para um produto com **1 vaga** passavam todas (`20/1` em uso); depois, exatamente 1 passa e as outras 19 recebem 409.
+Without the product lock, 20 concurrent assignments to a product with one seat all succeeded. With the lock, exactly one succeeds and the other 19 receive 409 responses.
 
-**Índice único parcial para a RN03.** `UNIQUE (product_id, employee_id) WHERE revoked_at IS NULL` garante no banco que só existe uma atribuição *ativa* por par, mas permite reatribuir depois de revogar. O service checa antes (para dar uma mensagem clara), e a violação do índice também vira 409.
+**Partial unique index for RN03.** `UNIQUE (product_id, employee_id) WHERE revoked_at IS NULL` enforces one active assignment per product/employee pair while allowing reassignment after revocation. The service checks first for a clear error message, and database violations are also converted to 409 responses.
 
-### Fluxo de atribuição de licença
+### License assignment flow
 
 ```mermaid
 sequenceDiagram
-    actor ApiClient as REST Client
+    actor Client as REST Client
     participant Controller as LicensesController
     participant Service as LicensesService
     participant DB as PostgreSQL
     participant Gateway as SeatsThresholdGateway
     actor SocketClient as Socket.IO Client
 
-    ApiClient->>Controller: POST /licenses
+    Client->>Controller: POST /licenses
     Controller->>Service: assign(productId, employeeId)
     Service->>DB: BEGIN
     Service->>DB: SELECT product FOR UPDATE
     Service->>DB: SELECT employee FOR UPDATE
     Service->>Service: Require ACTIVE employee (RN02)
     Service->>DB: Check active duplicate (RN03)
-    Service->>DB: Count active product assignments (RN01)
+    Service->>DB: Count active assignments (RN01)
 
-    alt Resource missing or business rule violated
+    alt Resource missing or rule violated
         Service->>DB: ROLLBACK
-        Service-->>Controller: Throw 404 or 409 exception
-        Controller-->>ApiClient: 404 Not Found or 409 Conflict
+        Service-->>Controller: Throw 404 or 409
+        Controller-->>Client: 404 Not Found or 409 Conflict
     else License can be assigned
-        Service->>DB: INSERT license assignment
+        Service->>DB: INSERT assignment
         Service->>DB: COMMIT
-        opt Seat usage is at least 90%
+        opt Usage is at least 90%
             Service->>Gateway: notifySeatsThreshold(event)
             Gateway-->>SocketClient: seats.threshold
         end
         Service-->>Controller: License response DTO
-        Controller-->>ApiClient: 201 Created
+        Controller-->>Client: 201 Created
     end
 ```
 
-O lock do produto serializa atribuições concorrentes que disputam a última vaga; o lock do colaborador coordena a atribuição com mudanças de status e desligamento. O evento em tempo real é emitido depois do `COMMIT`, mas antes de o service devolver a resposta HTTP.
+The product lock serializes assignments competing for the last seat. The employee lock coordinates assignment with status changes and offboarding. The event is emitted after `COMMIT` but before the service returns the HTTP response.
 
-**Relatório: o banco agrega, o service deriva.** `COUNT`/`SUM`/`GROUP BY` no SQL; total, desperdício e ordenação em TypeScript (a parte testada unitariamente). As duas consultas rodam numa transação `REPEATABLE READ`, a mesma "foto" do banco, então `custo total − custo em uso = economia potencial` sempre fecha.
+**Database aggregation for reports.** SQL handles `COUNT`, `SUM`, and `GROUP BY`; TypeScript derives totals, waste, and sorting. Both queries run in a `REPEATABLE READ` transaction against the same snapshot, ensuring that `total cost − cost in use = potential savings` always balances.
 
-**Alerta em tempo real só depois do commit.** O evento `seats.threshold` é enviado depois de a transação da atribuição terminar. Se fosse enviado dentro dela, um rollback deixaria o TI avisado sobre uma licença que nunca existiu. O gateway só entrega a mensagem; a decisão de *quando* avisar é regra do `LicensesService`. O limite de 90% é comparado com inteiros (`seatsInUse × 100 ≥ totalSeats × 90`), e não com `float`, para continuar correto se o percentual mudar.
+**Alerts only after commit.** Emitting an event inside a transaction could notify IT about an assignment that later rolls back. The gateway only delivers the message; `LicensesService` decides when to notify. The threshold uses integer arithmetic (`seatsInUse × 100 ≥ totalSeats × 90`).
 
-**Schema só por migrations.** Nada de `schema:update`/`synchronize`. As migrations são geradas a partir das entidades e aplicadas automaticamente quando a API sobe.
+**Schema managed only through migrations.** The project does not use `schema:update` or `synchronize`. Migrations are generated from entities and applied automatically when the API starts.
 
-**Organização por domínio.** Cada pasta (`products`, `employees`, `licenses`, `reports`) contém tudo o que é dela. Para entender ou mudar uma regra, basta olhar uma pasta. Controllers só recebem a requisição e chamam o service; regras de negócio ficam sempre nos services.
+**Domain-based organization.** Each domain folder contains everything related to that domain. To understand or change a rule, only one folder needs to be inspected.
 
-## O que eu faria em produção
+## What I would add in production
 
-- **Autenticação e autorização**: JWT/SSO corporativo e perfis (só o TI atribui e desliga; gestores consultam relatórios).
-- **Paginação** nas listagens (`GET /employees`, `GET /licenses`), que hoje retornam tudo.
-- **Auditoria de quem fez cada ação**: registrar o usuário responsável em cada atribuição, revogação e desligamento (hoje o histórico guarda *o quê* e *quando*, mas não *quem*).
-- **Integração real com a Microsoft (Graph API)**: atribuir e remover a licença no Microsoft 365 de verdade, e sincronizar colaboradores com o Azure AD / RH.
-- **Fila para desligamentos em lote**: processar desligamentos vindos do RH de forma assíncrona (ex.: SQS), com retentativas e idempotência.
-- **Migrations como etapa separada do deploy**: com várias réplicas, rodar as migrations num job antes de subir a nova versão, em vez de cada instância tentar no boot.
-- **`lock_timeout` e retentativa** nas operações com lock, para não deixar requisições esperando indefinidamente sob alta concorrência.
+- Corporate authentication and role-based authorization.
+- Pagination for list endpoints.
+- Auditing of the user responsible for each action.
+- Real Microsoft Graph API integration and employee synchronization with Azure AD or HR systems.
+- A queue with retries and idempotency for batch offboarding.
+- A separate migration job before deploying multiple API replicas.
+- `lock_timeout` and retry policies for operations that acquire locks.
 
-## Uso de IA no desenvolvimento
+## Use of AI during development
 
-Usei o Claude Code/Codex como par de programação, com regras definidas por mim em um documento de contexto: seguir um plano de etapas pequenas, parar ao fim de cada uma para eu revisar, não adicionar dependências nem escopo sem perguntar, e explicar cada decisão. O fluxo de Spec Driven Development (spec → teste falhando → código) foi uma escolha minha para manter o controle: eu aprovava a spec antes de qualquer código.
+I used Claude Code and Codex as pair-programming tools under constraints I defined in a project context document: follow a plan of small steps, stop after each step for my review, do not add dependencies or scope without asking, and explain every decision. I chose the spec-driven workflow—spec, failing test, implementation—to stay in control and approved each spec before code was written.
 
-Exemplos concretos do que revisei, corrigi ou rejeitei:
+Examples of what I reviewed, corrected, or rejected:
 
-- **Versão do framework.** O CLI mais recente gerava NestJS 12 com Vitest e oxlint. Como o adaptador do MikroORM 6 não suporta Nest 12 e a vaga cita Jest/ESLint, escolhi ficar no **Nest 11**.
-- **Concorrência na RN01.** A primeira versão checava as vagas sem nenhum lock. Quando a IA apontou isso como "limitação conhecida", pedi a correção. Antes de corrigir, reproduzimos o bug: 20 atribuições simultâneas num produto de 1 vaga resultaram em `20/1` em uso.
-- **Correção da correção.** A primeira versão do lock lia o produto e *depois* o travava, então o dado podia estar desatualizado. Na revisão, trocamos por "ler já travando" (`findOne` com `lockMode`) e estendemos o mesmo padrão para desligamento, mudança de status, revogação e redução de vagas.
-- **Teste que não provava nada.** Um teste de corrida feito com `curl` em sequência no Git Bash não reproduzia o problema, porque os processos subiam devagar demais para competir. Só um script com `Promise.all` mostrou o bug. Também percebi que algumas corridas só exercitavam uma ordem de chegada e forcei a ordem inversa.
-- **Testes verdes, build quebrado.** Um getter (`isActive`) na entidade passava nos testes, mas quebrava a compilação, porque o `ts-jest` não checa tipos entre arquivos. Desde então, `npm run build` faz parte da verificação de toda etapa.
-- **Reforço da RN03 no banco.** Aprovei o índice único parcial proposto, que não estava no escopo original, porque ele garante a regra mesmo se duas requisições passarem pela checagem do service ao mesmo tempo.
-- **Afirmação errada da IA.** Ao escrever a spec do WebSocket, a IA justificou a comparação com inteiros dizendo que `70 × 0.9` dava `63.00000000000001` em JavaScript. Conferimos e era falso: dá exatamente `63`, e com 90% o `float` nunca falha (testado até 100.000 vagas). Uma busca exaustiva mostrou que o problema existe com outros percentuais: com 7%, `100 × 0.07` dá `7.000000000000001`. A decisão ficou, mas a justificativa na spec foi corrigida.
-- **Seed seguro.** O seed recusa rodar em banco com dados em vez de apagá-los, para não haver risco de perder dados por engano.
+- **Framework version:** the latest CLI generated NestJS 12 with Vitest and oxlint. Because the MikroORM 6 adapter does not support Nest 12 and the target role mentions Jest and ESLint, I chose Nest 11.
+- **RN01 concurrency:** the first version checked seat availability without a lock. We reproduced the bug with 20 simultaneous assignments to a one-seat product before fixing it.
+- **Fixing the fix:** the first lock implementation read the product before locking it, which allowed stale data. We changed it to read while acquiring the lock and applied the same pattern to other state-changing operations.
+- **A test that proved nothing:** sequential `curl` processes started too slowly to reproduce a race. A script using `Promise.all` exposed the bug, and I added tests for both arrival orders.
+- **Green tests, broken build:** an entity getter passed Jest but failed TypeScript compilation because `ts-jest` does not type-check across files. `npm run build` is now part of every verification step.
+- **Database enforcement for RN03:** I approved a partial unique index beyond the original plan because it guarantees the rule even if two requests pass the service check simultaneously.
+- **An incorrect AI claim:** the AI claimed that `70 × 0.9` produces `63.00000000000001` in JavaScript. We verified that it produces exactly `63`; an exhaustive check found the floating-point issue at other percentages instead. We kept integer arithmetic but corrected the justification.
+- **Safe seed behavior:** the seed refuses to run against a database that already contains data instead of deleting it, preventing accidental data loss.
