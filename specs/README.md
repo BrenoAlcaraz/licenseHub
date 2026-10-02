@@ -39,7 +39,7 @@ Assim, um `grep` pelo ID encontra a spec e o teste que a garante.
 |---|---|
 | `[unit]` | Teste unitário do service (Jest, `EntityManager` mockado) — obrigatório |
 | `[pipe]` | `ValidationPipe` global + decorators do DTO — automatizado no e2e (E2E-02) |
-| `[manual]` | Conferido contra o banco real — os de concorrência e atomicidade estão automatizados no e2e (E2E-03 a E2E-09) |
+| `[manual]` | Conferido contra o banco real — os de concorrência e atomicidade estão automatizados no e2e (E2E-03 a E2E-11) |
 
 ## Formato dos critérios
 

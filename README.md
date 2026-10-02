@@ -178,13 +178,13 @@ Quando uma atribuição deixa um produto com **90% ou mais** das vagas em uso, a
 ## Como rodar os testes
 
 ```bash
-npm test          # testes unitários (58 testes, 4 suítes)
+npm test          # testes unitários (61 testes, 4 suítes)
 npm run test:cov  # com relatório de cobertura em coverage/
 npm run lint      # ESLint + Prettier
 npm run build     # checagem de tipos completa
 
 docker compose up -d db   # o e2e precisa do PostgreSQL
-npm run test:e2e          # testes ponta a ponta (11 testes)
+npm run test:e2e          # testes ponta a ponta (14 testes)
 ```
 
 - Os **testes unitários** cobrem **todas as regras de negócio** nos services, com o `EntityManager` mockado. A cobertura de linhas dos services fica entre 98% e 100%.
@@ -192,7 +192,8 @@ npm run test:e2e          # testes ponta a ponta (11 testes)
   - o fluxo completo produto → colaborador → atribuição → desligamento;
   - a validação de entrada;
   - a atomicidade do desligamento, forçando uma falha no banco;
-  - os **cenários de concorrência**, por exemplo 20 requisições disputando 1 vaga;
+  - os **cenários de concorrência**, incluindo 20 requisições disputando 1 vaga
+    e criações/renomeações simultâneas disputando o mesmo nome ou e-mail;
   - o **alerta em tempo real**, com um cliente WebSocket de verdade conectado. Ele foi escrito sobre o `WebSocket` nativo do Node 22, sem dependência extra.
 
   Para conferir que esses testes pegam regressões, removi o lock da atribuição de propósito: o E2E-05 falhou com 10 licenças atribuídas para 1 vaga.

@@ -116,3 +116,19 @@ Campos calculados (não ficam no banco):
   atribuições recebem 409 (sem vagas), ou atribuições vencem e o PATCH recebe 409 (RN07)
 - Como   o `PATCH` lê o produto com `FOR UPDATE` numa transação, assim como a
   atribuição (LIC-AC14)
+
+### PRD-AC12 — criação simultânea com o mesmo nome          [unit] [manual] RN09
+- Dado   que não existe produto com o nome "Slack Pro"
+- Quando várias requisições tentam criar "Slack Pro" ao mesmo tempo
+- Então  exatamente uma recebe 201 e as demais recebem 409 com
+  `Product 'Slack Pro' already exists`
+- E      existe apenas um produto com esse nome
+- Como   o índice único é a proteção final quando as requisições passam juntas
+  pela consulta de disponibilidade
+
+### PRD-AC13 — renomeação simultânea para o mesmo nome      [unit] [manual] RN09
+- Dado   dois produtos com nomes diferentes
+- Quando os dois são renomeados para "Slack Pro" ao mesmo tempo
+- Então  exatamente um recebe 200 e o outro recebe 409 com
+  `Product 'Slack Pro' already exists`
+- E      existe apenas um produto com esse nome

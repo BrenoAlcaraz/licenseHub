@@ -22,6 +22,10 @@ interface SocketIoTestClient {
   close: () => void;
 }
 
+interface ErrorResponse {
+  message: string;
+}
+
 // Minimal Socket.IO client over Node's native WebSocket (no extra dependency).
 // Protocol messages are text: "0{...}" = connection open, "40" = join the
 // default namespace, "42[event, data]" = event, "2"/"3" = ping/pong.
@@ -281,6 +285,69 @@ describe('LicenseHub (e2e)', () => {
   });
 
   describe('concurrency', () => {
+    it('E2E-11 (PRD-AC12) concurrent creates with the same product name return 409', async () => {
+      const name = `Contested Product ${++uniqueId}`;
+      const body = {
+        name,
+        vendor: 'Vendor',
+        monthlyCostCents: 1000,
+        totalSeats: 10,
+      };
+
+      const responses = await Promise.all(
+        Array.from({ length: 10 }, () => api().post('/products').send(body)),
+      );
+
+      expect(countStatuses(responses)).toEqual({ 201: 1, 409: 9 });
+      for (const response of responses.filter(({ status }) => status === 409)) {
+        expect((response.body as ErrorResponse).message).toBe(
+          `Product '${name}' already exists`,
+        );
+      }
+      const products = (await api().get('/products'))
+        .body as ProductResponseDto[];
+      expect(products).toEqual([expect.objectContaining({ name })]);
+    });
+
+    it('E2E-11 (PRD-AC13) concurrent renames to the same product name return 409', async () => {
+      const products = await Promise.all([createProduct(), createProduct()]);
+      const name = `Contested Rename ${++uniqueId}`;
+
+      const responses = await Promise.all(
+        products.map((product) =>
+          api().patch(`/products/${product.id}`).send({ name }),
+        ),
+      );
+
+      expect(countStatuses(responses)).toEqual({ 200: 1, 409: 1 });
+      const conflict = responses.find(({ status }) => status === 409)!;
+      expect((conflict.body as ErrorResponse).message).toBe(
+        `Product '${name}' already exists`,
+      );
+      const stored = (await api().get('/products'))
+        .body as ProductResponseDto[];
+      expect(stored.filter((product) => product.name === name)).toHaveLength(1);
+    });
+
+    it('E2E-11 (EMP-AC16) concurrent creates with the same email return 409', async () => {
+      const email = `contested${++uniqueId}@e2e.com`;
+      const body = { name: 'Contested Employee', email, department: 'TI' };
+
+      const responses = await Promise.all(
+        Array.from({ length: 10 }, () => api().post('/employees').send(body)),
+      );
+
+      expect(countStatuses(responses)).toEqual({ 201: 1, 409: 9 });
+      for (const response of responses.filter(({ status }) => status === 409)) {
+        expect((response.body as ErrorResponse).message).toBe(
+          `Employee with email '${email}' already exists`,
+        );
+      }
+      const employees = (await api().get('/employees'))
+        .body as EmployeeResponseDto[];
+      expect(employees).toEqual([expect.objectContaining({ email })]);
+    });
+
     it('E2E-05 (LIC-AC14) the last seat goes to exactly one of 20 concurrent requests', async () => {
       const product = await createProduct({ totalSeats: 1 });
       const employees = await Promise.all(

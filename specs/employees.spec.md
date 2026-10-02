@@ -167,3 +167,12 @@ OFFBOARDED → (nada)        estado final
 - Dado   um colaborador `OFFBOARDED`
 - Quando faço `POST /employees/:id/offboard`
 - Então  recebo 409 com `Employee 'Ana Souza' is already offboarded` e nada é alterado
+
+### EMP-AC16 — criação simultânea com o mesmo e-mail        [unit] [manual] RN09
+- Dado   que não existe colaborador com `ana.souza@empresa.com`
+- Quando várias requisições tentam criar esse e-mail ao mesmo tempo
+- Então  exatamente uma recebe 201 e as demais recebem 409 com
+  `Employee with email 'ana.souza@empresa.com' already exists`
+- E      existe apenas um colaborador com esse e-mail
+- Como   o índice único é a proteção final quando as requisições passam juntas
+  pela consulta de disponibilidade

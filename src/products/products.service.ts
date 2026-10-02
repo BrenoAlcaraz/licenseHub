@@ -1,4 +1,4 @@
-import { LockMode } from '@mikro-orm/core';
+import { LockMode, UniqueConstraintViolationException } from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
 import {
   ConflictException,
@@ -19,7 +19,7 @@ export class ProductsService {
     await this.ensureNameIsAvailable(dto.name);
 
     const product = this.em.create(Product, dto);
-    await this.em.flush();
+    await this.flushWithDuplicateNameHandling(dto.name);
 
     return this.toResponse(product);
   }
@@ -55,7 +55,11 @@ export class ProductsService {
       }
 
       this.em.assign(product, dto);
-      await this.em.flush();
+      if (dto.name !== undefined) {
+        await this.flushWithDuplicateNameHandling(dto.name);
+      } else {
+        await this.em.flush();
+      }
 
       return this.toResponse(product);
     });
@@ -95,6 +99,19 @@ export class ProductsService {
     const existing = await this.em.findOne(Product, { name });
     if (existing) {
       throw new ConflictException(`Product '${name}' already exists`);
+    }
+  }
+
+  private async flushWithDuplicateNameHandling(name: string): Promise<void> {
+    try {
+      await this.em.flush();
+    } catch (error) {
+      // RN09 under concurrency: the unique constraint is the final guard when
+      // two requests pass the availability check before either one commits.
+      if (error instanceof UniqueConstraintViolationException) {
+        throw new ConflictException(`Product '${name}' already exists`);
+      }
+      throw error;
     }
   }
 

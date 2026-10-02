@@ -1,4 +1,8 @@
-import { FilterQuery, LockMode } from '@mikro-orm/core';
+import {
+  FilterQuery,
+  LockMode,
+  UniqueConstraintViolationException,
+} from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
 import {
   ConflictException,
@@ -31,7 +35,7 @@ export class EmployeesService {
     await this.ensureEmailIsAvailable(dto.email);
 
     const employee = this.em.create(Employee, dto);
-    await this.em.flush();
+    await this.flushWithDuplicateEmailHandling(dto.email);
 
     return this.toResponse(employee);
   }
@@ -137,6 +141,21 @@ export class EmployeesService {
       throw new ConflictException(
         `Employee with email '${email}' already exists`,
       );
+    }
+  }
+
+  private async flushWithDuplicateEmailHandling(email: string): Promise<void> {
+    try {
+      await this.em.flush();
+    } catch (error) {
+      // RN09 under concurrency: the unique constraint is the final guard when
+      // two requests pass the availability check before either one commits.
+      if (error instanceof UniqueConstraintViolationException) {
+        throw new ConflictException(
+          `Employee with email '${email}' already exists`,
+        );
+      }
+      throw error;
     }
   }
 

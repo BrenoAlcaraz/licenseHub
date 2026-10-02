@@ -1,4 +1,4 @@
-import { LockMode } from '@mikro-orm/core';
+import { LockMode, UniqueConstraintViolationException } from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -82,6 +82,17 @@ describe('ProductsService', () => {
       );
       expect(em.create).not.toHaveBeenCalled();
       expect(em.flush).not.toHaveBeenCalled();
+    });
+
+    it('PRD-AC12 (RN09) returns 409 when a concurrent create wins after the availability check', async () => {
+      em.findOne.mockResolvedValue(null);
+      em.flush.mockRejectedValue(
+        new UniqueConstraintViolationException(new Error('duplicate key')),
+      );
+
+      await expect(service.create(dto)).rejects.toThrow(
+        new ConflictException("Product 'Microsoft 365 E3' already exists"),
+      );
     });
   });
 
@@ -174,6 +185,21 @@ describe('ProductsService', () => {
 
       expect(em.findOne).toHaveBeenCalledTimes(1);
       expect(em.flush).toHaveBeenCalled();
+    });
+
+    it('PRD-AC13 (RN09) returns 409 when a concurrent rename wins after the availability check', async () => {
+      em.findOne
+        .mockResolvedValueOnce(buildProduct({ name: 'Jira Software' }))
+        .mockResolvedValueOnce(null);
+      em.flush.mockRejectedValue(
+        new UniqueConstraintViolationException(new Error('duplicate key')),
+      );
+
+      await expect(
+        service.update(PRODUCT_ID, { name: 'Slack Pro' }),
+      ).rejects.toThrow(
+        new ConflictException("Product 'Slack Pro' already exists"),
+      );
     });
 
     it('PRD-AC09 (RN07) rejects reducing totalSeats below the seats in use', async () => {
