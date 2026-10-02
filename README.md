@@ -16,6 +16,89 @@ No meu estágio de automação de processos, o time de TI controlava as licença
 - **Alerta em tempo real** (WebSocket) quando um produto chega a 90% das vagas em uso.
 - Documentação interativa com **Swagger** em `/docs`.
 
+## Arquitetura do sistema
+
+O LicenseHub é um monólito modular: uma única API NestJS organizada em quatro módulos de domínio, com PostgreSQL como único banco de dados. Os rótulos do diagrama estão em inglês para facilitar seu uso como referência técnica.
+
+```mermaid
+flowchart LR
+    RestClient[REST Client]
+    DocsClient[Documentation User]
+    RealtimeClient[Socket.IO Client]
+
+    subgraph API["NestJS API — Single Service"]
+        HTTP["HTTP Server<br/>Global ValidationPipe"]
+        Swagger["Swagger UI<br/>/docs"]
+        Products["ProductsModule<br/>Controller + Service"]
+        Employees["EmployeesModule<br/>Controller + Service"]
+        Licenses["LicensesModule<br/>Controller + Service"]
+        Reports["ReportsModule<br/>Controller + Service"]
+        Gateway["SeatsThresholdGateway<br/>Socket.IO"]
+        ORM["MikroORM<br/>EntityManager"]
+        Migrator["MikroORM Migrator<br/>Runs at startup"]
+    end
+
+    DB[(PostgreSQL 16)]
+
+    RestClient -->|HTTP / JSON| HTTP
+    DocsClient -->|GET /docs| Swagger
+    Swagger --> HTTP
+    HTTP --> Products
+    HTTP --> Employees
+    HTTP --> Licenses
+    HTTP --> Reports
+    Licenses -. uses .-> Products
+    Licenses -. uses .-> Employees
+    Products --> ORM
+    Employees --> ORM
+    Licenses --> ORM
+    Reports --> ORM
+    ORM --> DB
+    Migrator -->|Apply pending migrations| DB
+    Licenses -->|After commit, usage at least 90%| Gateway
+    Gateway -->|seats.threshold| RealtimeClient
+```
+
+## Modelo de domínio
+
+```mermaid
+erDiagram
+    PRODUCT ||--o{ LICENSE_ASSIGNMENT : provides
+    EMPLOYEE ||--o{ LICENSE_ASSIGNMENT : receives
+
+    PRODUCT {
+        uuid id PK
+        string name UK
+        string vendor
+        int monthlyCostCents
+        int totalSeats
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    EMPLOYEE {
+        uuid id PK
+        string name
+        string email UK
+        string department
+        enum status "ACTIVE | ON_LEAVE | OFFBOARDED"
+        datetime offboardedAt "nullable"
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    LICENSE_ASSIGNMENT {
+        uuid id PK
+        uuid productId FK
+        uuid employeeId FK
+        datetime assignedAt
+        datetime revokedAt "nullable"
+        enum revokeReason "nullable: MANUAL | OFFBOARDING"
+    }
+```
+
+Uma atribuição está ativa enquanto `revokedAt` é `null` e nunca é apagada, preservando o histórico. Além das chaves mostradas acima, o banco possui o índice único parcial `UNIQUE (product_id, employee_id) WHERE revoked_at IS NULL`: ele impede duas atribuições ativas do mesmo produto para o mesmo colaborador, mas permite uma nova atribuição depois da revogação.
+
 ## Regras de negócio
 
 | Código | Regra | Erro |
@@ -255,6 +338,44 @@ Cada critério é marcado como `[unit]` (teste do service), `[pipe]` (validaçã
 Antes disso, 20 atribuições simultâneas para um produto com **1 vaga** passavam todas (`20/1` em uso); depois, exatamente 1 passa e as outras 19 recebem 409.
 
 **Índice único parcial para a RN03.** `UNIQUE (product_id, employee_id) WHERE revoked_at IS NULL` garante no banco que só existe uma atribuição *ativa* por par, mas permite reatribuir depois de revogar. O service checa antes (para dar uma mensagem clara), e a violação do índice também vira 409.
+
+### Fluxo de atribuição de licença
+
+```mermaid
+sequenceDiagram
+    actor ApiClient as REST Client
+    participant Controller as LicensesController
+    participant Service as LicensesService
+    participant DB as PostgreSQL
+    participant Gateway as SeatsThresholdGateway
+    actor SocketClient as Socket.IO Client
+
+    ApiClient->>Controller: POST /licenses
+    Controller->>Service: assign(productId, employeeId)
+    Service->>DB: BEGIN
+    Service->>DB: SELECT product FOR UPDATE
+    Service->>DB: SELECT employee FOR UPDATE
+    Service->>Service: Require ACTIVE employee (RN02)
+    Service->>DB: Check active duplicate (RN03)
+    Service->>DB: Count active product assignments (RN01)
+
+    alt Resource missing or business rule violated
+        Service->>DB: ROLLBACK
+        Service-->>Controller: Throw 404 or 409 exception
+        Controller-->>ApiClient: 404 Not Found or 409 Conflict
+    else License can be assigned
+        Service->>DB: INSERT license assignment
+        Service->>DB: COMMIT
+        opt Seat usage is at least 90%
+            Service->>Gateway: notifySeatsThreshold(event)
+            Gateway-->>SocketClient: seats.threshold
+        end
+        Service-->>Controller: License response DTO
+        Controller-->>ApiClient: 201 Created
+    end
+```
+
+O lock do produto serializa atribuições concorrentes que disputam a última vaga; o lock do colaborador coordena a atribuição com mudanças de status e desligamento. O evento em tempo real é emitido depois do `COMMIT`, mas antes de o service devolver a resposta HTTP.
 
 **Relatório: o banco agrega, o service deriva.** `COUNT`/`SUM`/`GROUP BY` no SQL; total, desperdício e ordenação em TypeScript (a parte testada unitariamente). As duas consultas rodam numa transação `REPEATABLE READ`, a mesma "foto" do banco, então `custo total − custo em uso = economia potencial` sempre fecha.
 
