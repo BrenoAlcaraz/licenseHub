@@ -1,3 +1,4 @@
+import { LockMode } from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
 import {
   ConflictException,
@@ -50,8 +51,12 @@ export class ProductsService {
     return this.toResponse(product);
   }
 
-  async findProductOrFail(id: string): Promise<Product> {
-    const product = await this.em.findOne(Product, { id });
+  /**
+   * @param lockMode pass LockMode.PESSIMISTIC_WRITE (inside a transaction) to
+   * read the row with SELECT ... FOR UPDATE.
+   */
+  async findProductOrFail(id: string, lockMode?: LockMode): Promise<Product> {
+    const product = await this.em.findOne(Product, { id }, { lockMode });
     if (!product) {
       throw new NotFoundException(`Product '${id}' not found`);
     }

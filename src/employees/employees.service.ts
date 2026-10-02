@@ -1,4 +1,4 @@
-import { FilterQuery } from '@mikro-orm/core';
+import { FilterQuery, LockMode } from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
 import {
   ConflictException,
@@ -75,8 +75,12 @@ export class EmployeesService {
     return this.toResponse(employee);
   }
 
-  async findEmployeeOrFail(id: string): Promise<Employee> {
-    const employee = await this.em.findOne(Employee, { id });
+  /**
+   * @param lockMode pass LockMode.PESSIMISTIC_WRITE (inside a transaction) to
+   * read the row with SELECT ... FOR UPDATE.
+   */
+  async findEmployeeOrFail(id: string, lockMode?: LockMode): Promise<Employee> {
+    const employee = await this.em.findOne(Employee, { id }, { lockMode });
     if (!employee) {
       throw new NotFoundException(`Employee '${id}' not found`);
     }

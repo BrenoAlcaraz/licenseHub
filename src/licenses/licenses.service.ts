@@ -35,12 +35,16 @@ export class LicensesService {
   // inside ProductsService/EmployeesService) join it automatically.
   assign(dto: AssignLicenseDto): Promise<LicenseResponseDto> {
     return this.em.transactional(async () => {
+      // Rows are read with SELECT ... FOR UPDATE: concurrent assignments of
+      // the same product (RN01) or to the same employee (vs. offboarding)
+      // wait here, and then read the data already updated by the other one.
       const product = await this.productsService.findProductOrFail(
         dto.productId,
+        LockMode.PESSIMISTIC_WRITE,
       );
-      await this.lockProductSeats(product);
       const employee = await this.employeesService.findEmployeeOrFail(
         dto.employeeId,
+        LockMode.PESSIMISTIC_WRITE,
       );
       this.ensureEmployeeIsActive(employee);
       await this.ensureNotAlreadyAssigned(product, employee);
@@ -75,37 +79,41 @@ export class LicensesService {
     return assignments.map((assignment) => this.toResponse(assignment));
   }
 
-  async revoke(id: string): Promise<LicenseResponseDto> {
-    const assignment = await this.findAssignmentOrFail(id);
-    if (!assignment.isActive) {
-      throw new ConflictException(
-        `License assignment '${id}' is already revoked`,
+  revoke(id: string): Promise<LicenseResponseDto> {
+    return this.em.transactional(async () => {
+      // FOR UPDATE: two concurrent revokes cannot both see it as active (RN06).
+      const assignment = await this.findAssignmentOrFail(
+        id,
+        LockMode.PESSIMISTIC_WRITE,
       );
-    }
+      if (!assignment.isActive) {
+        throw new ConflictException(
+          `License assignment '${id}' is already revoked`,
+        );
+      }
 
-    assignment.revoke(RevokeReason.MANUAL);
-    await this.em.flush();
+      assignment.revoke(RevokeReason.MANUAL);
+      await this.em.flush();
 
-    return this.toResponse(assignment);
+      return this.toResponse(assignment);
+    });
   }
 
-  private async findAssignmentOrFail(id: string): Promise<LicenseAssignment> {
+  private async findAssignmentOrFail(
+    id: string,
+    lockMode: LockMode,
+  ): Promise<LicenseAssignment> {
     const assignment = await this.em.findOne(
       LicenseAssignment,
       { id },
-      { populate: ['product', 'employee'] },
+      { lockMode },
     );
     if (!assignment) {
       throw new NotFoundException(`License assignment '${id}' not found`);
     }
+    // Populated in a separate query so the lock stays on this row only.
+    await this.em.populate(assignment, ['product', 'employee']);
     return assignment;
-  }
-
-  // RN01 under concurrency: SELECT ... FOR UPDATE on the product row. A second
-  // assignment of the same product waits here until the first one commits,
-  // so it counts the seats *after* the first assignment is saved.
-  private async lockProductSeats(product: Product): Promise<void> {
-    await this.em.lock(product, LockMode.PESSIMISTIC_WRITE);
   }
 
   private async flushAssignment(

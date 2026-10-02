@@ -54,7 +54,7 @@ describe('LicensesService', () => {
     find: jest.Mock;
     findOne: jest.Mock;
     flush: jest.Mock;
-    lock: jest.Mock;
+    populate: jest.Mock;
     transactional: jest.Mock;
   };
   let productsService: {
@@ -78,7 +78,7 @@ describe('LicensesService', () => {
       find: jest.fn(),
       findOne: jest.fn(),
       flush: jest.fn(),
-      lock: jest.fn(),
+      populate: jest.fn(),
       // Runs the callback right away, like a transaction that commits.
       transactional: jest.fn((work: () => Promise<unknown>) => work()),
     };
@@ -189,15 +189,18 @@ describe('LicensesService', () => {
       expect(em.create).not.toHaveBeenCalled();
     });
 
-    it('LIC-AC14 (RN01) locks the product row inside a transaction before counting seats', async () => {
+    it('LIC-AC14 (RN01) reads product and employee with a row lock inside a transaction', async () => {
       await service.assign(dto);
 
       expect(em.transactional).toHaveBeenCalledTimes(1);
-      expect(em.lock).toHaveBeenCalledWith(product, LockMode.PESSIMISTIC_WRITE);
-      const lockedAt = em.lock.mock.invocationCallOrder[0];
-      const seatsCountedAt =
-        productsService.countSeatsInUse.mock.invocationCallOrder[0];
-      expect(lockedAt).toBeLessThan(seatsCountedAt);
+      expect(productsService.findProductOrFail).toHaveBeenCalledWith(
+        PRODUCT_ID,
+        LockMode.PESSIMISTIC_WRITE,
+      );
+      expect(employeesService.findEmployeeOrFail).toHaveBeenCalledWith(
+        EMPLOYEE_ID,
+        LockMode.PESSIMISTIC_WRITE,
+      );
     });
 
     it('LIC-AC13 (RN03) maps a concurrent duplicate caught by the unique index to 409', async () => {
@@ -260,6 +263,19 @@ describe('LicensesService', () => {
       expect(em.flush).toHaveBeenCalled();
       expect(result.revokedAt).toBeInstanceOf(Date);
       expect(result.revokeReason).toBe(RevokeReason.MANUAL);
+    });
+
+    it('LIC-AC15 (RN06) reads the assignment with a row lock inside a transaction', async () => {
+      em.findOne.mockResolvedValue(buildAssignment());
+
+      await service.revoke(ASSIGNMENT_ID);
+
+      expect(em.transactional).toHaveBeenCalledTimes(1);
+      expect(em.findOne).toHaveBeenCalledWith(
+        LicenseAssignment,
+        { id: ASSIGNMENT_ID },
+        expect.objectContaining({ lockMode: LockMode.PESSIMISTIC_WRITE }),
+      );
     });
 
     it('LIC-AC11 (RN06) fails with 409 when the assignment is already revoked', async () => {

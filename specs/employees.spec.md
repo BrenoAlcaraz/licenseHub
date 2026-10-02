@@ -153,6 +153,15 @@ OFFBOARDED → (nada)        estado final
 - Quando faço `POST /employees/:id/offboard`
 - Então  o desligamento acontece normalmente e as licenças são revogadas
 
+### EMP-AC15 — desligamento e atribuição simultâneos          [unit] [manual] RN02 RN04 *(etapa 6)*
+- Dado   um colaborador `ACTIVE`
+- Quando um `POST /employees/:id/offboard` e um `POST /licenses` para ele chegam ao mesmo tempo
+  (ou dois offboards ao mesmo tempo)
+- Então  ele nunca termina `OFFBOARDED` com licença ativa, e só um offboard tem sucesso
+  (o outro recebe 409 da RN05)
+- Como   o offboarding lê o colaborador com `FOR UPDATE`; a atribuição também
+  (LIC-AC14). Quem chegar depois espera e lê o status já atualizado
+
 ### EMP-AC14 — não desliga duas vezes                        [unit] RN05 *(etapa 6)*
 - Dado   um colaborador `OFFBOARDED`
 - Quando faço `POST /employees/:id/offboard`

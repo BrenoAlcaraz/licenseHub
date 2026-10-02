@@ -53,9 +53,8 @@ mesmo com duas requisições simultâneas. Se o índice for violado, a API respo
 Tudo roda dentro de **uma transação**. O service checa nesta ordem e para no
 primeiro erro (guard clauses):
 
-1. produto existe → senão **404** (RN10)
-   - a linha do produto é **travada** (`FOR UPDATE`) até o fim da transação (LIC-AC14)
-2. colaborador existe → senão **404** (RN10)
+1. produto existe → senão **404** (RN10) — lido com `FOR UPDATE` (LIC-AC14)
+2. colaborador existe → senão **404** (RN10) — lido com `FOR UPDATE` (LIC-AC14, EMP-AC15)
 3. colaborador está `ACTIVE` → senão **409** (RN02 / RN08)
 4. colaborador não tem atribuição ativa desse produto → senão **409** (RN03)
 5. produto tem vaga (`seatsInUse < totalSeats`) → senão **409** (RN01)
@@ -119,9 +118,17 @@ primeiro erro (guard clauses):
 - Quando os N fazem `POST /licenses` para esse produto ao mesmo tempo
 - Então  exatamente 1 recebe 201 e os demais recebem 409 (sem vagas);
   `seatsInUse` nunca passa de `totalSeats`
-- Como   a atribuição roda numa transação que trava a linha do produto
-  (`SELECT ... FOR UPDATE`, lock pessimista) **antes** de contar as vagas,
-  então atribuições do mesmo produto são processadas uma de cada vez
+- Como   a atribuição roda numa transação que **lê já travando** a linha do
+  produto e depois a do colaborador (`SELECT ... FOR UPDATE`, lock pessimista).
+  Atribuições do mesmo produto são processadas uma de cada vez, e cada uma lê
+  `totalSeats`/`status` atualizados (nada de dado lido antes do lock)
+
+### LIC-AC15 — revogação concorrente da mesma atribuição      [unit] [manual] RN06
+- Dado   uma atribuição ativa
+- Quando duas requisições `POST /licenses/:id/revoke` chegam ao mesmo tempo
+- Então  uma recebe 200 e a outra 409 (`is already revoked`); `revokedAt`
+  não é sobrescrito
+- Como   a revogação roda numa transação que lê a atribuição com `FOR UPDATE`
 
 ### LIC-AC08 — valida a entrada                              [pipe]
 - Quando faço `POST /licenses` sem `productId`, com id que não é UUID ou com campo extra
