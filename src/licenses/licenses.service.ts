@@ -1,5 +1,6 @@
 import {
   FilterQuery,
+  LockMode,
   UniqueConstraintViolationException,
 } from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
@@ -29,28 +30,30 @@ export class LicensesService {
 
   // Checks run in the order defined in specs/licenses.spec.md and stop at the
   // first failure: 404 product, 404 employee, RN02, RN03, RN01.
-  async assign(dto: AssignLicenseDto): Promise<LicenseResponseDto> {
-    const product = await this.productsService.findProductOrFail(dto.productId);
-    const employee = await this.employeesService.findEmployeeOrFail(
-      dto.employeeId,
-    );
-    this.ensureEmployeeIsActive(employee);
-    await this.ensureNotAlreadyAssigned(product, employee);
-    await this.ensureHasAvailableSeat(product);
+  //
+  // Everything runs in one transaction. Calls made through `this.em` (also
+  // inside ProductsService/EmployeesService) join it automatically.
+  assign(dto: AssignLicenseDto): Promise<LicenseResponseDto> {
+    return this.em.transactional(async () => {
+      const product = await this.productsService.findProductOrFail(
+        dto.productId,
+      );
+      await this.lockProductSeats(product);
+      const employee = await this.employeesService.findEmployeeOrFail(
+        dto.employeeId,
+      );
+      this.ensureEmployeeIsActive(employee);
+      await this.ensureNotAlreadyAssigned(product, employee);
+      await this.ensureHasAvailableSeat(product);
 
-    const assignment = this.em.create(LicenseAssignment, { product, employee });
-    try {
-      await this.em.flush();
-    } catch (error) {
-      // Two concurrent requests passed ensureNotAlreadyAssigned; the unique
-      // index stopped the second one.
-      if (error instanceof UniqueConstraintViolationException) {
-        throw this.alreadyAssignedError(product, employee);
-      }
-      throw error;
-    }
+      const assignment = this.em.create(LicenseAssignment, {
+        product,
+        employee,
+      });
+      await this.flushAssignment(product, employee);
 
-    return this.toResponse(assignment);
+      return this.toResponse(assignment);
+    });
   }
 
   async findAll(query: ListLicensesQueryDto): Promise<LicenseResponseDto[]> {
@@ -96,6 +99,29 @@ export class LicensesService {
       throw new NotFoundException(`License assignment '${id}' not found`);
     }
     return assignment;
+  }
+
+  // RN01 under concurrency: SELECT ... FOR UPDATE on the product row. A second
+  // assignment of the same product waits here until the first one commits,
+  // so it counts the seats *after* the first assignment is saved.
+  private async lockProductSeats(product: Product): Promise<void> {
+    await this.em.lock(product, LockMode.PESSIMISTIC_WRITE);
+  }
+
+  private async flushAssignment(
+    product: Product,
+    employee: Employee,
+  ): Promise<void> {
+    try {
+      await this.em.flush();
+    } catch (error) {
+      // RN03 under concurrency: the partial unique index rejected a second
+      // active assignment of the same product for the same employee.
+      if (error instanceof UniqueConstraintViolationException) {
+        throw this.alreadyAssignedError(product, employee);
+      }
+      throw error;
+    }
   }
 
   // RN02 / RN08: only ACTIVE employees receive new licenses.

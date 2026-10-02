@@ -1,4 +1,4 @@
-import { UniqueConstraintViolationException } from '@mikro-orm/core';
+import { LockMode, UniqueConstraintViolationException } from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -54,6 +54,8 @@ describe('LicensesService', () => {
     find: jest.Mock;
     findOne: jest.Mock;
     flush: jest.Mock;
+    lock: jest.Mock;
+    transactional: jest.Mock;
   };
   let productsService: {
     findProductOrFail: jest.Mock;
@@ -76,6 +78,9 @@ describe('LicensesService', () => {
       find: jest.fn(),
       findOne: jest.fn(),
       flush: jest.fn(),
+      lock: jest.fn(),
+      // Runs the callback right away, like a transaction that commits.
+      transactional: jest.fn((work: () => Promise<unknown>) => work()),
     };
     productsService = {
       findProductOrFail: jest.fn().mockResolvedValue(product),
@@ -182,6 +187,17 @@ describe('LicensesService', () => {
         ),
       );
       expect(em.create).not.toHaveBeenCalled();
+    });
+
+    it('LIC-AC14 (RN01) locks the product row inside a transaction before counting seats', async () => {
+      await service.assign(dto);
+
+      expect(em.transactional).toHaveBeenCalledTimes(1);
+      expect(em.lock).toHaveBeenCalledWith(product, LockMode.PESSIMISTIC_WRITE);
+      const lockedAt = em.lock.mock.invocationCallOrder[0];
+      const seatsCountedAt =
+        productsService.countSeatsInUse.mock.invocationCallOrder[0];
+      expect(lockedAt).toBeLessThan(seatsCountedAt);
     });
 
     it('LIC-AC13 (RN03) maps a concurrent duplicate caught by the unique index to 409', async () => {

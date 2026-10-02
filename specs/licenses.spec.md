@@ -50,9 +50,11 @@ mesmo com duas requisições simultâneas. Se o índice for violado, a API respo
 
 ## Ordem das verificações ao atribuir
 
-O service checa nesta ordem e para no primeiro erro (guard clauses):
+Tudo roda dentro de **uma transação**. O service checa nesta ordem e para no
+primeiro erro (guard clauses):
 
 1. produto existe → senão **404** (RN10)
+   - a linha do produto é **travada** (`FOR UPDATE`) até o fim da transação (LIC-AC14)
 2. colaborador existe → senão **404** (RN10)
 3. colaborador está `ACTIVE` → senão **409** (RN02 / RN08)
 4. colaborador não tem atribuição ativa desse produto → senão **409** (RN03)
@@ -111,6 +113,15 @@ O service checa nesta ordem e para no primeiro erro (guard clauses):
 - Quando faço `POST /licenses` para um colaborador `ACTIVE` sem essa licença
 - Então  recebo 409 com `Product 'Slack Pro' has no available seats (5/5 in use)`
   e nenhuma atribuição é criada
+
+### LIC-AC14 — última vaga disputada ao mesmo tempo          [unit] [manual] RN01
+- Dado   um produto com 1 vaga livre e N colaboradores `ACTIVE` diferentes
+- Quando os N fazem `POST /licenses` para esse produto ao mesmo tempo
+- Então  exatamente 1 recebe 201 e os demais recebem 409 (sem vagas);
+  `seatsInUse` nunca passa de `totalSeats`
+- Como   a atribuição roda numa transação que trava a linha do produto
+  (`SELECT ... FOR UPDATE`, lock pessimista) **antes** de contar as vagas,
+  então atribuições do mesmo produto são processadas uma de cada vez
 
 ### LIC-AC08 — valida a entrada                              [pipe]
 - Quando faço `POST /licenses` sem `productId`, com id que não é UUID ou com campo extra
