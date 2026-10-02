@@ -15,5 +15,22 @@ services:
       timeout: 5s
       retries: 10
 
+  api:
+    build: .
+    environment:
+      PORT: 3000
+      # Inside the compose network the database is the `db` service on its
+      # internal port, whatever DB_PORT is published on the host.
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-licensehub}
+      DB_PASSWORD: ${DB_PASSWORD:-licensehub}
+      DB_NAME: ${DB_NAME:-licensehub}
+    ports:
+      - '${PORT:-3000}:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   db-data:

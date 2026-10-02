@@ -1,4 +1,5 @@
-import { ValidationPipe } from '@nestjs/common';
+import { MikroORM } from '@mikro-orm/core';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -6,6 +7,14 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // The schema is created only by migrations: apply pending ones before
+  // serving requests (no schema:update / synchronize).
+  const appliedMigrations = await app.get(MikroORM).migrator.up();
+  Logger.log(
+    `${appliedMigrations.length} pending migration(s) applied`,
+    'Migrations',
+  );
 
   app.useGlobalPipes(
     new ValidationPipe({
