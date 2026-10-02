@@ -1,0 +1,168 @@
+import { EntityManager } from '@mikro-orm/postgresql';
+import { ConflictException, NotFoundException } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { EmployeeStatus } from './employee-status.enum';
+import { Employee } from './employee.entity';
+import { EmployeesService } from './employees.service';
+
+const EMPLOYEE_ID = '3b9f6d2a-1c4e-4f8a-9b7d-5e6f7a8b9c0d';
+
+function buildEmployee(overrides: Partial<Employee> = {}): Employee {
+  return Object.assign(new Employee(), {
+    id: EMPLOYEE_ID,
+    name: 'Ana Souza',
+    email: 'ana.souza@empresa.com',
+    department: 'TI',
+    ...overrides,
+  });
+}
+
+describe('EmployeesService', () => {
+  let service: EmployeesService;
+  let em: {
+    findOne: jest.Mock;
+    find: jest.Mock;
+    create: jest.Mock;
+    flush: jest.Mock;
+  };
+
+  beforeEach(async () => {
+    em = {
+      findOne: jest.fn(),
+      find: jest.fn(),
+      create: jest.fn((_entity, data: Partial<Employee>) =>
+        buildEmployee(data),
+      ),
+      flush: jest.fn(),
+    };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [EmployeesService, { provide: EntityManager, useValue: em }],
+    }).compile();
+
+    service = moduleRef.get(EmployeesService);
+  });
+
+  describe('create', () => {
+    const dto = {
+      name: 'Ana Souza',
+      email: 'ana.souza@empresa.com',
+      department: 'TI',
+    };
+
+    it('EMP-AC01 creates an ACTIVE employee', async () => {
+      em.findOne.mockResolvedValue(null);
+
+      const result = await service.create(dto);
+
+      expect(em.create).toHaveBeenCalledWith(Employee, dto);
+      expect(em.flush).toHaveBeenCalled();
+      expect(result).toMatchObject({
+        ...dto,
+        status: EmployeeStatus.ACTIVE,
+        offboardedAt: null,
+      });
+    });
+
+    it('EMP-AC02 (RN09) rejects a duplicated email', async () => {
+      em.findOne.mockResolvedValue(buildEmployee());
+
+      await expect(service.create(dto)).rejects.toThrow(
+        new ConflictException(
+          "Employee with email 'ana.souza@empresa.com' already exists",
+        ),
+      );
+      expect(em.flush).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findAll', () => {
+    beforeEach(() => em.find.mockResolvedValue([buildEmployee()]));
+
+    it('EMP-AC04 filters by status and department', async () => {
+      const result = await service.findAll({
+        status: EmployeeStatus.ACTIVE,
+        department: 'TI',
+      });
+
+      expect(em.find).toHaveBeenCalledWith(
+        Employee,
+        { status: EmployeeStatus.ACTIVE, department: 'TI' },
+        expect.anything(),
+      );
+      expect(result).toHaveLength(1);
+    });
+
+    it('EMP-AC04 returns everyone when no filter is given', async () => {
+      await service.findAll({});
+
+      expect(em.find).toHaveBeenCalledWith(Employee, {}, expect.anything());
+    });
+  });
+
+  describe('findOne', () => {
+    it('returns the employee', async () => {
+      em.findOne.mockResolvedValue(buildEmployee());
+
+      const result = await service.findOne(EMPLOYEE_ID);
+
+      expect(result).toMatchObject({ id: EMPLOYEE_ID, name: 'Ana Souza' });
+    });
+
+    it('EMP-AC06 (RN10) throws 404 when the employee does not exist', async () => {
+      em.findOne.mockResolvedValue(null);
+
+      await expect(service.findOne(EMPLOYEE_ID)).rejects.toThrow(
+        new NotFoundException(`Employee '${EMPLOYEE_ID}' not found`),
+      );
+    });
+  });
+
+  describe('updateStatus', () => {
+    it('EMP-AC07 (RN08) puts an ACTIVE employee ON_LEAVE', async () => {
+      em.findOne.mockResolvedValue(buildEmployee());
+
+      const result = await service.updateStatus(EMPLOYEE_ID, {
+        status: EmployeeStatus.ON_LEAVE,
+      });
+
+      expect(em.flush).toHaveBeenCalled();
+      expect(result.status).toBe(EmployeeStatus.ON_LEAVE);
+    });
+
+    it('EMP-AC08 brings an ON_LEAVE employee back to ACTIVE', async () => {
+      em.findOne.mockResolvedValue(
+        buildEmployee({ status: EmployeeStatus.ON_LEAVE }),
+      );
+
+      const result = await service.updateStatus(EMPLOYEE_ID, {
+        status: EmployeeStatus.ACTIVE,
+      });
+
+      expect(result.status).toBe(EmployeeStatus.ACTIVE);
+    });
+
+    it('EMP-AC06 (RN10) throws 404 when the employee does not exist', async () => {
+      em.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.updateStatus(EMPLOYEE_ID, { status: EmployeeStatus.ACTIVE }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('EMP-AC10 rejects status changes of an OFFBOARDED employee', async () => {
+      em.findOne.mockResolvedValue(
+        buildEmployee({ status: EmployeeStatus.OFFBOARDED }),
+      );
+
+      await expect(
+        service.updateStatus(EMPLOYEE_ID, { status: EmployeeStatus.ACTIVE }),
+      ).rejects.toThrow(
+        new ConflictException(
+          "Employee 'Ana Souza' is offboarded and cannot change status",
+        ),
+      );
+      expect(em.flush).not.toHaveBeenCalled();
+    });
+  });
+});

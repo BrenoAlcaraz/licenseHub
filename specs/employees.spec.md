@@ -103,7 +103,7 @@ OFFBOARDED → (nada)        estado final
 - Então  recebo só os colaboradores ativos de TI
 - E      sem filtros, recebo todos; `?status=` com valor fora do enum retorna 400 [pipe]
 
-### EMP-AC05 — detalha com licenças ativas                   [unit]
+### EMP-AC05 — detalha com licenças ativas                   [unit] *(etapa 5)*
 - Dado   um colaborador com 2 atribuições ativas e 1 revogada
 - Quando faço `GET /employees/:id`
 - Então  `activeLicenses` contém só as 2 ativas, com `productName`
@@ -113,7 +113,7 @@ OFFBOARDED → (nada)        estado final
   `POST /employees/:id/offboard` com id que não existe
 - Então  recebo 404 com `Employee '<id>' not found`
 
-### EMP-AC07 — coloca em férias sem perder licenças          [unit] RN08
+### EMP-AC07 — coloca em férias sem perder licenças          [unit] RN08 *(status: etapa 4; "nenhuma revogada": etapa 6)*
 - Dado   um colaborador `ACTIVE` com 2 licenças ativas
 - Quando faço `PATCH /employees/:id/status` com `{ "status": "ON_LEAVE" }`
 - Então  recebo 200 com `status = ON_LEAVE`
@@ -133,7 +133,7 @@ OFFBOARDED → (nada)        estado final
 - Quando faço `PATCH /employees/:id/status` com qualquer valor
 - Então  recebo 409 com `Employee 'Ana Souza' is offboarded and cannot change status`
 
-### EMP-AC11 — desligamento revoga todas as licenças         [unit] RN04
+### EMP-AC11 — desligamento revoga todas as licenças         [unit] RN04 *(etapa 6)*
 - Dado   "Ana Souza" `ACTIVE` com licenças ativas de M365 (18900), Slack Pro (4500)
   e Jira Software (4000)
 - Quando faço `POST /employees/:id/offboard`
@@ -143,17 +143,17 @@ OFFBOARDED → (nada)        estado final
 - E      tudo acontece dentro de **uma única transação** (`em.transactional`):
   se algo falhar, nem o status nem as atribuições mudam
 
-### EMP-AC12 — desligamento sem licenças                     [unit] RN04
+### EMP-AC12 — desligamento sem licenças                     [unit] RN04 *(etapa 6)*
 - Dado   um colaborador sem licenças ativas
 - Quando faço `POST /employees/:id/offboard`
 - Então  recebo 200 com `revokedLicenses = 0` e `monthlySavingsCents = 0`
 
-### EMP-AC13 — desligamento de quem está de férias           [unit] RN04
+### EMP-AC13 — desligamento de quem está de férias           [unit] RN04 *(etapa 6)*
 - Dado   um colaborador `ON_LEAVE` com licenças ativas
 - Quando faço `POST /employees/:id/offboard`
 - Então  o desligamento acontece normalmente e as licenças são revogadas
 
-### EMP-AC14 — não desliga duas vezes                        [unit] RN05
+### EMP-AC14 — não desliga duas vezes                        [unit] RN05 *(etapa 6)*
 - Dado   um colaborador `OFFBOARDED`
 - Quando faço `POST /employees/:id/offboard`
 - Então  recebo 409 com `Employee 'Ana Souza' is already offboarded` e nada é alterado
