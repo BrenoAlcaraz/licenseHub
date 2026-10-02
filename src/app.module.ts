@@ -6,6 +6,7 @@ import { createMikroOrmConfig } from './mikro-orm.config';
 import { EmployeesModule } from './employees/employees.module';
 import { LicensesModule } from './licenses/licenses.module';
 import { ProductsModule } from './products/products.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { ProductsModule } from './products/products.module';
     ProductsModule,
     EmployeesModule,
     LicensesModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}

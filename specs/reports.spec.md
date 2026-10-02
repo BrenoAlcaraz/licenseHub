@@ -33,7 +33,18 @@ Somente leitura; nenhuma regra de negócio altera dados aqui.
 | `potentialMonthlySavingsCents` | Σ `wastedMonthlyCostCents` |
 
 Ordenação: `byDepartment` por `monthlyCostCents` decrescente; `idleSeats` por
-`wastedMonthlyCostCents` decrescente. Departamentos sem licenças ativas não aparecem.
+`wastedMonthlyCostCents` decrescente (empate: ordem alfabética). Departamentos sem
+licenças ativas não aparecem.
+
+## Como é calculado
+
+- O **banco agrega** (`COUNT`/`SUM`/`GROUP BY`) em duas consultas: vagas em uso por
+  produto e custo das atribuições ativas por departamento.
+- O **service deriva** o resto em TypeScript: total, vagas ociosas, desperdício,
+  economia e ordenação.
+- As duas consultas rodam numa transação `REPEATABLE READ` (uma "foto" única do
+  banco), então `totalMonthlyCostCents − Σ byDepartment = potentialMonthlySavingsCents`
+  sempre fecha.
 
 ## Dados do seed (base para conferir os números)
 
@@ -98,9 +109,12 @@ nenhuma licença (bom para testar uma atribuição nova).
 - E      confere: `totalMonthlyCostCents − Σ byDepartment.monthlyCostCents`
   = 326000 − 198300 = 127700
 
-### REP-AC05 — atribuições revogadas não contam              [unit]
+### REP-AC05 — atribuições revogadas não contam              [manual]
 - Dado   uma atribuição revogada
 - Então  ela não entra em `byDepartment` e a vaga dela conta como ociosa
+- Por que [manual]: o filtro `revoked_at IS NULL` está dentro do SQL de agregação;
+  um teste com o banco mockado não consegue provar isso. Conferido contra o banco
+  com o seed (etapa 9)
 
 ### REP-AC06 — banco vazio                                   [unit]
 - Dado   nenhum produto cadastrado
