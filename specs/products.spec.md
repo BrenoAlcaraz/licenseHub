@@ -97,13 +97,22 @@ Campos calculados (não ficam no banco):
 - Então  recebo 409 com `Product 'Slack Pro' already exists`
 - E      manter o próprio nome (`PATCH` com o nome atual) **não** é conflito
 
-### PRD-AC09 — não reduz totalSeats abaixo do uso            [unit] RN07  *(etapa 7)*
+### PRD-AC09 — não reduz totalSeats abaixo do uso            [unit] RN07
 - Dado   "Microsoft 365 E3" com 7 vagas em uso
 - Quando faço `PATCH` com `{ "totalSeats": 5 }`
 - Então  recebo 409 com `Cannot reduce totalSeats of 'Microsoft 365 E3' to 5: 7 seats in use`
   e o produto não é alterado
 
-### PRD-AC10 — pode reduzir até exatamente o uso             [unit] RN07  *(etapa 7)*
+### PRD-AC10 — pode reduzir até exatamente o uso             [unit] RN07
 - Dado   "Microsoft 365 E3" com 7 vagas em uso
 - Quando faço `PATCH` com `{ "totalSeats": 7 }`
 - Então  recebo 200 com `seatsAvailable = 0`
+
+### PRD-AC11 — redução e atribuição simultâneas              [unit] [manual] RN07 RN01
+- Dado   "Slack Pro" com `totalSeats = 10` e 5 vagas em uso
+- Quando um `PATCH { "totalSeats": 5 }` e várias `POST /licenses` desse produto
+  chegam ao mesmo tempo
+- Então  `seatsInUse` nunca fica maior que `totalSeats`: ou o PATCH vence e as
+  atribuições recebem 409 (sem vagas), ou atribuições vencem e o PATCH recebe 409 (RN07)
+- Como   o `PATCH` lê o produto com `FOR UPDATE` numa transação, assim como a
+  atribuição (LIC-AC14)

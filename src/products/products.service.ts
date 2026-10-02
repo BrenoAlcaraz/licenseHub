@@ -38,17 +38,27 @@ export class ProductsService {
     return this.toResponse(product);
   }
 
-  async update(id: string, dto: UpdateProductDto): Promise<ProductResponseDto> {
-    const product = await this.findProductOrFail(id);
+  update(id: string, dto: UpdateProductDto): Promise<ProductResponseDto> {
+    return this.em.transactional(async () => {
+      // FOR UPDATE: a concurrent assignment waits, so the seats counted below
+      // cannot change before this update is saved (PRD-AC11).
+      const product = await this.findProductOrFail(
+        id,
+        LockMode.PESSIMISTIC_WRITE,
+      );
 
-    if (dto.name !== undefined && dto.name !== product.name) {
-      await this.ensureNameIsAvailable(dto.name);
-    }
+      if (dto.name !== undefined && dto.name !== product.name) {
+        await this.ensureNameIsAvailable(dto.name);
+      }
+      if (dto.totalSeats !== undefined) {
+        await this.ensureSeatsCoverUsage(product, dto.totalSeats);
+      }
 
-    this.em.assign(product, dto);
-    await this.em.flush();
+      this.em.assign(product, dto);
+      await this.em.flush();
 
-    return this.toResponse(product);
+      return this.toResponse(product);
+    });
   }
 
   /**
@@ -66,6 +76,19 @@ export class ProductsService {
   /** Seats in use = active (not revoked) assignments of the product. */
   countSeatsInUse(product: Product): Promise<number> {
     return this.em.count(LicenseAssignment, { product, revokedAt: null });
+  }
+
+  // RN07: totalSeats cannot go below the seats currently in use.
+  private async ensureSeatsCoverUsage(
+    product: Product,
+    totalSeats: number,
+  ): Promise<void> {
+    const seatsInUse = await this.countSeatsInUse(product);
+    if (totalSeats < seatsInUse) {
+      throw new ConflictException(
+        `Cannot reduce totalSeats of '${product.name}' to ${totalSeats}: ${seatsInUse} seats in use`,
+      );
+    }
   }
 
   private async ensureNameIsAvailable(name: string): Promise<void> {

@@ -1,3 +1,4 @@
+import { LockMode } from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -27,6 +28,7 @@ describe('ProductsService', () => {
     assign: jest.Mock;
     flush: jest.Mock;
     count: jest.Mock;
+    transactional: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -39,6 +41,8 @@ describe('ProductsService', () => {
       ),
       flush: jest.fn(),
       count: jest.fn().mockResolvedValue(0),
+      // Runs the callback right away, like a transaction that commits.
+      transactional: jest.fn((work: () => Promise<unknown>) => work()),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -170,6 +174,50 @@ describe('ProductsService', () => {
 
       expect(em.findOne).toHaveBeenCalledTimes(1);
       expect(em.flush).toHaveBeenCalled();
+    });
+
+    it('PRD-AC09 (RN07) rejects reducing totalSeats below the seats in use', async () => {
+      const product = buildProduct();
+      em.findOne.mockResolvedValueOnce(product);
+      em.count.mockResolvedValue(7);
+
+      await expect(
+        service.update(PRODUCT_ID, { totalSeats: 5 }),
+      ).rejects.toThrow(
+        new ConflictException(
+          "Cannot reduce totalSeats of 'Microsoft 365 E3' to 5: 7 seats in use",
+        ),
+      );
+      expect(product.totalSeats).toBe(10);
+      expect(em.assign).not.toHaveBeenCalled();
+      expect(em.flush).not.toHaveBeenCalled();
+    });
+
+    it('PRD-AC10 (RN07) allows reducing totalSeats to exactly the seats in use', async () => {
+      em.findOne.mockResolvedValueOnce(buildProduct());
+      em.count.mockResolvedValue(7);
+
+      const result = await service.update(PRODUCT_ID, { totalSeats: 7 });
+
+      expect(em.flush).toHaveBeenCalled();
+      expect(result).toMatchObject({
+        totalSeats: 7,
+        seatsInUse: 7,
+        seatsAvailable: 0,
+      });
+    });
+
+    it('PRD-AC11 (RN07) reads the product with a row lock inside a transaction', async () => {
+      em.findOne.mockResolvedValueOnce(buildProduct());
+
+      await service.update(PRODUCT_ID, { totalSeats: 12 });
+
+      expect(em.transactional).toHaveBeenCalledTimes(1);
+      expect(em.findOne).toHaveBeenCalledWith(
+        Product,
+        { id: PRODUCT_ID },
+        { lockMode: LockMode.PESSIMISTIC_WRITE },
+      );
     });
   });
 });
