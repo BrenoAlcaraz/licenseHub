@@ -56,7 +56,7 @@ O comportamento detalhado de cada endpoint, com critérios de aceite, está em [
 **Pré-requisitos:** Docker. Para rodar o seed e os testes no host também é preciso Node.js 22.
 
 ```bash
-git clone <url-do-repositorio> licensehub
+git clone https://github.com/BrenoAlcaraz/licenseHub.git licensehub
 cd licensehub
 cp .env.example .env
 
