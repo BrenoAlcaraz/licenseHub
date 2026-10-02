@@ -23,6 +23,7 @@ Cada critério de aceite tem um ID `<MÓDULO>-AC<NN>`:
 | `LIC` | Licenses | [licenses.spec.md](licenses.spec.md) |
 | `REP` | Reports | [reports.spec.md](reports.spec.md) |
 | `RT` | Alerta em tempo real (WebSocket) | [realtime.spec.md](realtime.spec.md) |
+| `UI` | Dashboard web | [dashboard.spec.md](dashboard.spec.md) |
 | `E2E` | Testes ponta a ponta | [e2e.spec.md](e2e.spec.md) |
 
 O nome do teste cita o ID do critério e a regra de negócio, por exemplo:
@@ -39,6 +40,7 @@ Assim, um `grep` pelo ID encontra a spec e o teste que a garante.
 |---|---|
 | `[unit]` | Teste unitário do service (Jest, `EntityManager` mockado) — obrigatório |
 | `[pipe]` | `ValidationPipe` global + decorators do DTO — automatizado no e2e (E2E-02) |
+| `[e2e]` | Teste automatizado com a aplicação e o PostgreSQL reais |
 | `[manual]` | Conferido contra o banco real — os de concorrência e atomicidade estão automatizados no e2e (E2E-03 a E2E-11) |
 
 ## Formato dos critérios
