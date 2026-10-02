@@ -276,7 +276,7 @@ Antes disso, 20 atribuições simultâneas para um produto com **1 vaga** passav
 
 ## Uso de IA no desenvolvimento
 
-Usei o Claude Code como par de programação, com regras definidas por mim em um documento de contexto: seguir um plano de etapas pequenas, parar ao fim de cada uma para eu revisar, não adicionar dependências nem escopo sem perguntar, e explicar cada decisão. O fluxo de Spec Driven Development (spec → teste falhando → código) foi uma escolha minha para manter o controle: eu aprovava a spec antes de qualquer código.
+Usei o Claude Code/Codex como par de programação, com regras definidas por mim em um documento de contexto: seguir um plano de etapas pequenas, parar ao fim de cada uma para eu revisar, não adicionar dependências nem escopo sem perguntar, e explicar cada decisão. O fluxo de Spec Driven Development (spec → teste falhando → código) foi uma escolha minha para manter o controle: eu aprovava a spec antes de qualquer código.
 
 Exemplos concretos do que revisei, corrigi ou rejeitei:
 
