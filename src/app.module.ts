@@ -3,6 +3,7 @@ import { PostgreSqlDriver } from '@mikro-orm/postgresql';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { createMikroOrmConfig } from './mikro-orm.config';
+import { ProductsModule } from './products/products.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { createMikroOrmConfig } from './mikro-orm.config';
       driver: PostgreSqlDriver,
       useFactory: createMikroOrmConfig,
     }),
+    ProductsModule,
   ],
 })
 export class AppModule {}
