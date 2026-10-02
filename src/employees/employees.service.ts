@@ -6,13 +6,22 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { LicenseAssignment } from '../licenses/license-assignment.entity';
+import { RevokeReason } from '../licenses/revoke-reason.enum';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { EmployeeDetailResponseDto } from './dto/employee-detail-response.dto';
 import { EmployeeResponseDto } from './dto/employee-response.dto';
 import { ListEmployeesQueryDto } from './dto/list-employees-query.dto';
+import { OffboardResponseDto } from './dto/offboard-response.dto';
 import { UpdateEmployeeStatusDto } from './dto/update-employee-status.dto';
 import { EmployeeStatus } from './employee-status.enum';
 import { Employee } from './employee.entity';
+
+function sumMonthlyCost(assignments: LicenseAssignment[]): number {
+  return assignments.reduce(
+    (total, assignment) => total + assignment.product.monthlyCostCents,
+    0,
+  );
+}
 
 @Injectable()
 export class EmployeesService {
@@ -61,18 +70,53 @@ export class EmployeesService {
     };
   }
 
-  async updateStatus(
+  updateStatus(
     id: string,
     dto: UpdateEmployeeStatusDto,
   ): Promise<EmployeeResponseDto> {
-    const employee = await this.findEmployeeOrFail(id);
-    this.ensureIsNotOffboarded(employee);
+    return this.em.transactional(async () => {
+      // FOR UPDATE: a concurrent offboarding cannot be overwritten (EMP-AC15).
+      const employee = await this.findEmployeeOrFail(
+        id,
+        LockMode.PESSIMISTIC_WRITE,
+      );
+      this.ensureCanChangeStatus(employee);
 
-    // RN08: going ON_LEAVE keeps the current licenses; nothing is revoked here.
-    employee.status = dto.status;
-    await this.em.flush();
+      // RN08: going ON_LEAVE keeps the current licenses; nothing is revoked.
+      employee.status = dto.status;
+      await this.em.flush();
 
-    return this.toResponse(employee);
+      return this.toResponse(employee);
+    });
+  }
+
+  // RN04: status, offboardedAt and every revocation are saved together or not
+  // at all, because they run inside one transaction.
+  offboard(id: string): Promise<OffboardResponseDto> {
+    return this.em.transactional(async () => {
+      // FOR UPDATE: concurrent offboard/assign/status change wait (EMP-AC15).
+      const employee = await this.findEmployeeOrFail(
+        id,
+        LockMode.PESSIMISTIC_WRITE,
+      );
+      this.ensureIsNotAlreadyOffboarded(employee);
+
+      const activeAssignments =
+        await this.findActiveAssignmentsForUpdate(employee);
+      for (const assignment of activeAssignments) {
+        assignment.revoke(RevokeReason.OFFBOARDING);
+      }
+      employee.status = EmployeeStatus.OFFBOARDED;
+      employee.offboardedAt = new Date();
+      await this.em.flush();
+
+      return {
+        employeeId: employee.id,
+        status: employee.status,
+        revokedLicenses: activeAssignments.length,
+        monthlySavingsCents: sumMonthlyCost(activeAssignments),
+      };
+    });
   }
 
   /**
@@ -96,12 +140,35 @@ export class EmployeesService {
     }
   }
 
-  private ensureIsNotOffboarded(employee: Employee): void {
+  private ensureCanChangeStatus(employee: Employee): void {
     if (employee.status === EmployeeStatus.OFFBOARDED) {
       throw new ConflictException(
         `Employee '${employee.name}' is offboarded and cannot change status`,
       );
     }
+  }
+
+  // RN05: offboarding happens only once.
+  private ensureIsNotAlreadyOffboarded(employee: Employee): void {
+    if (employee.status === EmployeeStatus.OFFBOARDED) {
+      throw new ConflictException(
+        `Employee '${employee.name}' is already offboarded`,
+      );
+    }
+  }
+
+  private async findActiveAssignmentsForUpdate(
+    employee: Employee,
+  ): Promise<LicenseAssignment[]> {
+    const assignments = await this.em.find(
+      LicenseAssignment,
+      { employee, revokedAt: null },
+      { lockMode: LockMode.PESSIMISTIC_WRITE },
+    );
+    // Products are loaded in a separate query so the lock stays on the
+    // assignment rows only.
+    await this.em.populate(assignments, ['product']);
+    return assignments;
   }
 
   private toResponse(employee: Employee): EmployeeResponseDto {

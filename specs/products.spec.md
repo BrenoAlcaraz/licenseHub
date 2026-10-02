@@ -71,7 +71,7 @@ Campos calculados (não ficam no banco):
   com `totalSeats < 1`, com valores não inteiros ou com campos desconhecidos
 - Então  recebo 400 com a lista de erros de validação
 
-### PRD-AC04 — lista com vagas calculadas                    [unit]  *(etapa 5, quando existirem atribuições)*
+### PRD-AC04 — lista com vagas calculadas                    [unit]
 - Dado   o produto "Microsoft 365 E3" com `totalSeats = 10`, 7 atribuições ativas e 2 revogadas
 - Quando faço `GET /products`
 - Então  o item desse produto tem `seatsInUse = 7` e `seatsAvailable = 3`

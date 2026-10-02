@@ -1,7 +1,9 @@
+import { LockMode } from '@mikro-orm/core';
 import { EntityManager } from '@mikro-orm/postgresql';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { LicenseAssignment } from '../licenses/license-assignment.entity';
+import { RevokeReason } from '../licenses/revoke-reason.enum';
 import { Product } from '../products/product.entity';
 import { EmployeeStatus } from './employee-status.enum';
 import { Employee } from './employee.entity';
@@ -26,16 +28,34 @@ describe('EmployeesService', () => {
     find: jest.Mock;
     create: jest.Mock;
     flush: jest.Mock;
+    populate: jest.Mock;
+    transactional: jest.Mock;
   };
+  // Lets tests check that the writes happened inside the transaction (RN04).
+  let insideTransaction: boolean;
+  let flushedInsideTransaction: boolean;
 
   beforeEach(async () => {
+    insideTransaction = false;
+    flushedInsideTransaction = false;
     em = {
       findOne: jest.fn(),
       find: jest.fn(),
       create: jest.fn((_entity, data: Partial<Employee>) =>
         buildEmployee(data),
       ),
-      flush: jest.fn(),
+      flush: jest.fn(() => {
+        flushedInsideTransaction = insideTransaction;
+      }),
+      populate: jest.fn(),
+      transactional: jest.fn(async (work: () => Promise<unknown>) => {
+        insideTransaction = true;
+        try {
+          return await work();
+        } finally {
+          insideTransaction = false;
+        }
+      }),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -157,6 +177,8 @@ describe('EmployeesService', () => {
 
       expect(em.flush).toHaveBeenCalled();
       expect(result.status).toBe(EmployeeStatus.ON_LEAVE);
+      // RN08: licenses are not even looked up, so none can be revoked.
+      expect(em.find).not.toHaveBeenCalled();
     });
 
     it('EMP-AC08 brings an ON_LEAVE employee back to ACTIVE', async () => {
@@ -179,6 +201,21 @@ describe('EmployeesService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
+    it('EMP-AC15 reads the employee with a row lock inside a transaction', async () => {
+      em.findOne.mockResolvedValue(buildEmployee());
+
+      await service.updateStatus(EMPLOYEE_ID, {
+        status: EmployeeStatus.ON_LEAVE,
+      });
+
+      expect(em.findOne).toHaveBeenCalledWith(
+        Employee,
+        { id: EMPLOYEE_ID },
+        { lockMode: LockMode.PESSIMISTIC_WRITE },
+      );
+      expect(flushedInsideTransaction).toBe(true);
+    });
+
     it('EMP-AC10 rejects status changes of an OFFBOARDED employee', async () => {
       em.findOne.mockResolvedValue(
         buildEmployee({ status: EmployeeStatus.OFFBOARDED }),
@@ -192,6 +229,109 @@ describe('EmployeesService', () => {
         ),
       );
       expect(em.flush).not.toHaveBeenCalled();
+    });
+  });
+  describe('offboard', () => {
+    function buildActiveAssignment(name: string, monthlyCostCents: number) {
+      return Object.assign(new LicenseAssignment(), {
+        id: `assignment-${name}`,
+        product: Object.assign(new Product(), { name, monthlyCostCents }),
+      });
+    }
+
+    it('EMP-AC11 (RN04) offboards and revokes every active license in one transaction', async () => {
+      const employee = buildEmployee();
+      const assignments = [
+        buildActiveAssignment('Microsoft 365 E3', 18900),
+        buildActiveAssignment('Slack Pro', 4500),
+        buildActiveAssignment('Jira Software', 4000),
+      ];
+      em.findOne.mockResolvedValue(employee);
+      em.find.mockResolvedValue(assignments);
+
+      const result = await service.offboard(EMPLOYEE_ID);
+
+      expect(result).toEqual({
+        employeeId: EMPLOYEE_ID,
+        status: EmployeeStatus.OFFBOARDED,
+        revokedLicenses: 3,
+        monthlySavingsCents: 27400,
+      });
+      expect(employee.status).toBe(EmployeeStatus.OFFBOARDED);
+      expect(employee.offboardedAt).toBeInstanceOf(Date);
+      for (const assignment of assignments) {
+        expect(assignment.revokedAt).toBeInstanceOf(Date);
+        expect(assignment.revokeReason).toBe(RevokeReason.OFFBOARDING);
+      }
+      expect(em.find).toHaveBeenCalledWith(
+        LicenseAssignment,
+        { employee, revokedAt: null },
+        expect.anything(),
+      );
+      expect(em.transactional).toHaveBeenCalledTimes(1);
+      expect(flushedInsideTransaction).toBe(true);
+    });
+
+    it('EMP-AC12 (RN04) offboards an employee without licenses', async () => {
+      em.findOne.mockResolvedValue(buildEmployee());
+      em.find.mockResolvedValue([]);
+
+      const result = await service.offboard(EMPLOYEE_ID);
+
+      expect(result).toMatchObject({
+        status: EmployeeStatus.OFFBOARDED,
+        revokedLicenses: 0,
+        monthlySavingsCents: 0,
+      });
+    });
+
+    it('EMP-AC13 (RN04) offboards an employee who is ON_LEAVE', async () => {
+      const employee = buildEmployee({ status: EmployeeStatus.ON_LEAVE });
+      em.findOne.mockResolvedValue(employee);
+      em.find.mockResolvedValue([buildActiveAssignment('Slack Pro', 4500)]);
+
+      const result = await service.offboard(EMPLOYEE_ID);
+
+      expect(result.revokedLicenses).toBe(1);
+      expect(employee.status).toBe(EmployeeStatus.OFFBOARDED);
+    });
+
+    it('EMP-AC14 (RN05) rejects offboarding an already OFFBOARDED employee', async () => {
+      em.findOne.mockResolvedValue(
+        buildEmployee({ status: EmployeeStatus.OFFBOARDED }),
+      );
+
+      await expect(service.offboard(EMPLOYEE_ID)).rejects.toThrow(
+        new ConflictException("Employee 'Ana Souza' is already offboarded"),
+      );
+      expect(em.find).not.toHaveBeenCalled();
+      expect(em.flush).not.toHaveBeenCalled();
+    });
+
+    it('EMP-AC06 (RN10) throws 404 when the employee does not exist', async () => {
+      em.findOne.mockResolvedValue(null);
+
+      await expect(service.offboard(EMPLOYEE_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('EMP-AC15 reads the employee and its assignments with row locks', async () => {
+      em.findOne.mockResolvedValue(buildEmployee());
+      em.find.mockResolvedValue([]);
+
+      await service.offboard(EMPLOYEE_ID);
+
+      expect(em.findOne).toHaveBeenCalledWith(
+        Employee,
+        { id: EMPLOYEE_ID },
+        { lockMode: LockMode.PESSIMISTIC_WRITE },
+      );
+      expect(em.find).toHaveBeenCalledWith(
+        LicenseAssignment,
+        expect.anything(),
+        expect.objectContaining({ lockMode: LockMode.PESSIMISTIC_WRITE }),
+      );
     });
   });
 });

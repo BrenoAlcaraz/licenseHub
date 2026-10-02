@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -13,6 +15,7 @@ import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { EmployeeDetailResponseDto } from './dto/employee-detail-response.dto';
 import { EmployeeResponseDto } from './dto/employee-response.dto';
 import { ListEmployeesQueryDto } from './dto/list-employees-query.dto';
+import { OffboardResponseDto } from './dto/offboard-response.dto';
 import { UpdateEmployeeStatusDto } from './dto/update-employee-status.dto';
 import { EmployeesService } from './employees.service';
 
@@ -46,5 +49,14 @@ export class EmployeesController {
     @Body() dto: UpdateEmployeeStatusDto,
   ): Promise<EmployeeResponseDto> {
     return this.employeesService.updateStatus(id, dto);
+  }
+
+  // POST returns 201 by default; offboarding changes an existing resource.
+  @Post(':id/offboard')
+  @HttpCode(HttpStatus.OK)
+  offboard(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<OffboardResponseDto> {
+    return this.employeesService.offboard(id);
   }
 }
