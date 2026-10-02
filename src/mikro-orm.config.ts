@@ -19,6 +19,9 @@ export function createMikroOrmConfig() {
     migrations: {
       path: 'dist/database/migrations',
       pathTs: 'src/database/migrations',
+      // The snapshot describes the schema built by the migrations, which is
+      // the same for every database (dev, e2e): keep a single file.
+      snapshotName: '.snapshot-licensehub',
     },
   });
 }
