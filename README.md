@@ -156,9 +156,19 @@ npm test          # testes unitários (52 testes, 4 suítes)
 npm run test:cov  # com relatório de cobertura em coverage/
 npm run lint      # ESLint + Prettier
 npm run build     # checagem de tipos completa
+
+docker compose up -d db   # o e2e precisa do PostgreSQL
+npm run test:e2e          # testes ponta a ponta (10 testes)
 ```
 
-- Os testes cobrem **todas as regras de negócio** nos services, com o `EntityManager` mockado. A cobertura de linhas dos services fica entre 98% e 100%.
+- Os **testes unitários** cobrem **todas as regras de negócio** nos services, com o `EntityManager` mockado. A cobertura de linhas dos services fica entre 98% e 100%.
+- Os **testes e2e** ([`specs/e2e.spec.md`](specs/e2e.spec.md)) rodam contra o PostgreSQL de verdade, num banco separado (`licensehub_e2e`, criado automaticamente), sem tocar nos dados do seed. Eles cobrem:
+  - o fluxo completo produto → colaborador → atribuição → desligamento;
+  - a validação de entrada;
+  - a atomicidade do desligamento, forçando uma falha no banco;
+  - os **cenários de concorrência**, por exemplo 20 requisições disputando 1 vaga.
+
+  Para conferir que esses testes pegam regressões, removi o lock da atribuição de propósito: o E2E-05 falhou com 10 licenças atribuídas para 1 vaga.
 - O nome de cada teste cita o critério de aceite da spec (ex.: `LIC-AC07 (RN01) fails with 409 when the product has no available seats`).
 - `npm run build` faz parte da verificação: o `ts-jest` não faz checagem de tipos entre arquivos, então um erro de tipo pode passar nos testes e só aparecer no build.
 
@@ -170,6 +180,7 @@ licensehub/
 ├── src/
 │   ├── main.ts              # bootstrap: migrations, ValidationPipe global, Swagger
 │   ├── app.module.ts        # junta config, MikroORM e os módulos de domínio
+│   ├── app.setup.ts         # configuração HTTP compartilhada (ValidationPipe)
 │   ├── mikro-orm.config.ts  # configuração do banco (app e CLI de migrations)
 │   ├── products/            # produtos, cálculo de vagas, RN07, RN09
 │   ├── employees/           # colaboradores, status, desligamento (RN04, RN05, RN08)
@@ -178,6 +189,7 @@ licensehub/
 │   └── database/
 │       ├── migrations/      # schema versionado (gerado pelo MikroORM)
 │       └── seed.ts          # dados de exemplo
+├── test/                    # testes e2e contra o PostgreSQL real
 ├── Dockerfile               # multi-stage: build → runtime enxuto
 └── docker-compose.yml       # PostgreSQL + API
 ```
